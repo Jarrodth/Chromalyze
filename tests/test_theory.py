@@ -1,6 +1,8 @@
 from chromalyze.theory import (
     analyze_chord_function,
+    build_chord,
     build_scale,
+    diatonic_sevenths,
     diatonic_triads,
     parallel_key,
     relative_key,
@@ -93,3 +95,59 @@ def test_analyze_chord_function_borrowed_chord_in_c_major():
     fn = analyze_chord_function("Bb", "major", "C", "major")
     assert fn.roman_numeral == "bVII"
     assert fn.is_diatonic is False
+
+
+def test_build_chord_spells_common_seventh_chords_correctly():
+    # Each case is a real, standard chord spelling — the letter-stacking
+    # approach must reuse each letter's normal "skip one" pattern (root,
+    # 3rd, 5th, 7th), never reusing a letter or defaulting to a "simpler"
+    # enharmonic spelling.
+    assert build_chord("C", "major7").notes == ["C", "E", "G", "B"]
+    assert build_chord("G", "dominant7").notes == ["G", "B", "D", "F"]
+    assert build_chord("D", "minor7").notes == ["D", "F", "A", "C"]
+    assert build_chord("B", "half-diminished7").notes == ["B", "D", "F", "A"]
+    # A fully diminished 7th stacks minor thirds all the way up — B D F Ab,
+    # not B D F G#, since G# would break the letter-per-third pattern.
+    assert build_chord("B", "diminished7").notes == ["B", "D", "F", "Ab"]
+    assert build_chord("C", "minor-major7").notes == ["C", "Eb", "G", "B"]
+
+
+def test_build_chord_pitch_classes_match_notes():
+    chord = build_chord("D", "minor7")
+    assert chord.pitch_classes == [2, 5, 9, 0]
+
+
+def test_diatonic_sevenths_c_major():
+    scale = build_scale("C", "major")
+    sevenths = diatonic_sevenths(scale)
+
+    expected = [
+        (1, "C", "major7", "Imaj7"),
+        (2, "D", "minor7", "ii7"),
+        (3, "E", "minor7", "iii7"),
+        (4, "F", "major7", "IVmaj7"),
+        (5, "G", "dominant7", "V7"),
+        (6, "A", "minor7", "vi7"),
+        (7, "B", "half-diminished7", "viiø7"),
+    ]
+    actual = [(s.degree, s.root, s.quality, s.roman_numeral) for s in sevenths]
+    assert actual == expected
+
+
+def test_diatonic_sevenths_a_natural_minor():
+    scale = build_scale("A", "minor")
+    sevenths = diatonic_sevenths(scale)
+
+    # Natural minor (no raised leading tone): i7 iiø7 IIImaj7 iv7 v7 VImaj7 VII7
+    qualities = [s.quality for s in sevenths]
+    assert qualities == [
+        "minor7", "half-diminished7", "major7", "minor7", "minor7", "major7", "dominant7",
+    ]
+    numerals = [s.roman_numeral for s in sevenths]
+    assert numerals == ["i7", "iiø7", "IIImaj7", "iv7", "v7", "VImaj7", "VII7"]
+
+
+def test_analyze_chord_function_handles_seventh_chords():
+    fn = analyze_chord_function("G", "dominant7", "C", "major")
+    assert fn.roman_numeral == "V7"
+    assert fn.is_diatonic is False  # analyze_chord_function checks against diatonic *triads*, not sevenths

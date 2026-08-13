@@ -59,6 +59,30 @@ def _accidental_suffix(diff: int) -> str:
     return symbol * abs(diff)
 
 
+def _spell_intervals(tonic: str, intervals: list[int], letter_step: int) -> list[str]:
+    """Spell each of `intervals` (semitones above `tonic`) using real letter
+    names with the correct accidental, rather than a fixed chromatic
+    lookup that could reuse a letter or skip one entirely. `letter_step`
+    controls how many letters each successive interval advances by: 1 for
+    a 7-note scale (consecutive letters), 2 for a tertian chord (letters
+    skip by a third each time, e.g. C-E-G-B skips D/F/A) — the only real
+    difference between spelling a scale and spelling a chord.
+    """
+    tonic_pc = NOTE_NAME_TO_PITCH_CLASS[tonic]
+    start_letter_index = LETTER_ORDER.index(tonic[0])
+
+    notes = []
+    for i, interval in enumerate(intervals):
+        target_pc = (tonic_pc + interval) % 12
+        letter = LETTER_ORDER[(start_letter_index + i * letter_step) % 7]
+        natural_pc = NATURAL_LETTER_PITCH_CLASS[letter]
+        diff = (target_pc - natural_pc) % 12
+        if diff > 6:
+            diff -= 12
+        notes.append(letter + _accidental_suffix(diff))
+    return notes
+
+
 def spell_scale(tonic: str, mode: str) -> list[str]:
     """Spell a scale using each of the 7 natural letter names exactly once
     (starting from the tonic's own letter), with the correct accidental on
@@ -67,20 +91,7 @@ def spell_scale(tonic: str, mode: str) -> list[str]:
     F#, never G A B C D E Gb — that reuses "G" and never uses "F").
     """
     mode = _resolve_mode(mode)
-    intervals = MODE_INTERVALS[mode]
-    tonic_pc = NOTE_NAME_TO_PITCH_CLASS[tonic]
-    start_letter_index = LETTER_ORDER.index(tonic[0])
-
-    notes = []
-    for i, interval in enumerate(intervals):
-        target_pc = (tonic_pc + interval) % 12
-        letter = LETTER_ORDER[(start_letter_index + i) % 7]
-        natural_pc = NATURAL_LETTER_PITCH_CLASS[letter]
-        diff = (target_pc - natural_pc) % 12
-        if diff > 6:
-            diff -= 12
-        notes.append(letter + _accidental_suffix(diff))
-    return notes
+    return _spell_intervals(tonic, MODE_INTERVALS[mode], letter_step=1)
 
 
 @dataclass
@@ -113,13 +124,53 @@ def _classify_triad(root_to_third: int, root_to_fifth: int) -> str:
     return "other"
 
 
-_QUALITY_NUMERAL_DECORATION = {
+_TRIAD_QUALITY_NUMERAL_DECORATION = {
     "major": lambda numeral: numeral,
     "minor": lambda numeral: numeral.lower(),
     "diminished": lambda numeral: numeral.lower() + "°",
     "augmented": lambda numeral: numeral + "+",
     "other": lambda numeral: numeral + "?",
 }
+
+# Semitone intervals above the root for every triad and seventh-chord
+# quality this module knows how to name. Shared by `build_chord` (spelling
+# an arbitrary chord from a root + quality) and the diatonic-chord builders
+# below (deriving quality from a scale, then looking the chord back up
+# here to get real spelled note names).
+CHORD_INTERVALS = {
+    "major": [0, 4, 7],
+    "minor": [0, 3, 7],
+    "diminished": [0, 3, 6],
+    "augmented": [0, 4, 8],
+    "major7": [0, 4, 7, 11],
+    "dominant7": [0, 4, 7, 10],
+    "minor7": [0, 3, 7, 10],
+    "minor-major7": [0, 3, 7, 11],
+    "half-diminished7": [0, 3, 6, 10],
+    "diminished7": [0, 3, 6, 9],
+    "augmented-major7": [0, 4, 8, 11],
+    "augmented7": [0, 4, 8, 10],
+}
+
+
+@dataclass
+class Chord:
+    root: str
+    quality: str
+    notes: list[str]  # properly spelled, root through the highest chord tone
+    pitch_classes: list[int]  # same order as notes
+
+
+def build_chord(root: str, quality: str) -> Chord:
+    """Build any triad or seventh chord from a root note and a quality
+    (one of `CHORD_INTERVALS`'s keys) — independent of any scale or key,
+    e.g. `build_chord("D", "minor7")` for a plain Dm7.
+    """
+    intervals = CHORD_INTERVALS[quality]
+    root_pc = NOTE_NAME_TO_PITCH_CLASS[root]
+    pitch_classes = [(root_pc + i) % 12 for i in intervals]
+    notes = _spell_intervals(root, intervals, letter_step=2)
+    return Chord(root=root, quality=quality, notes=notes, pitch_classes=pitch_classes)
 
 
 @dataclass
@@ -146,11 +197,86 @@ def diatonic_triads(scale: Scale) -> list[DiatonicChord]:
         root_to_third = (third - root) % 12
         root_to_fifth = (fifth - root) % 12
         quality = _classify_triad(root_to_third, root_to_fifth)
-        numeral = _QUALITY_NUMERAL_DECORATION[quality](ROMAN_NUMERALS[degree])
+        numeral = _TRIAD_QUALITY_NUMERAL_DECORATION[quality](ROMAN_NUMERALS[degree])
         triads.append(
             DiatonicChord(degree=degree + 1, root=scale.notes[degree], quality=quality, roman_numeral=numeral)
         )
     return triads
+
+
+def _classify_seventh(root_to_third: int, root_to_fifth: int, root_to_seventh: int) -> str:
+    triad_quality = _classify_triad(root_to_third, root_to_fifth)
+    if triad_quality == "major":
+        if root_to_seventh == 11:
+            return "major7"
+        if root_to_seventh == 10:
+            return "dominant7"
+    elif triad_quality == "minor":
+        if root_to_seventh == 10:
+            return "minor7"
+        if root_to_seventh == 11:
+            return "minor-major7"
+    elif triad_quality == "diminished":
+        if root_to_seventh == 10:
+            return "half-diminished7"
+        if root_to_seventh == 9:
+            return "diminished7"
+    elif triad_quality == "augmented":
+        if root_to_seventh == 11:
+            return "augmented-major7"
+        if root_to_seventh == 10:
+            return "augmented7"
+    return "other7"
+
+
+_SEVENTH_QUALITY_NUMERAL_DECORATION = {
+    "major7": lambda numeral: numeral + "maj7",
+    "dominant7": lambda numeral: numeral + "7",
+    "minor7": lambda numeral: numeral.lower() + "7",
+    "minor-major7": lambda numeral: numeral.lower() + "(maj7)",
+    "half-diminished7": lambda numeral: numeral.lower() + "ø7",
+    "diminished7": lambda numeral: numeral.lower() + "°7",
+    "augmented-major7": lambda numeral: numeral + "+(maj7)",
+    "augmented7": lambda numeral: numeral + "+7",
+    "other7": lambda numeral: numeral + "7?",
+}
+
+# Used by analyze_chord_function, which may be handed either a triad or a
+# seventh-chord quality — one combined lookup covers both.
+_CHORD_QUALITY_NUMERAL_DECORATION = {**_TRIAD_QUALITY_NUMERAL_DECORATION, **_SEVENTH_QUALITY_NUMERAL_DECORATION}
+
+
+@dataclass
+class DiatonicSeventhChord:
+    degree: int  # 1-7
+    root: str  # note name, e.g. "D"
+    quality: str  # a CHORD_INTERVALS key ending in "7", e.g. "minor7", "half-diminished7"
+    roman_numeral: str  # e.g. "Imaj7", "ii7", "viiø7"
+
+
+def diatonic_sevenths(scale: Scale) -> list[DiatonicSeventhChord]:
+    """The 7 four-note chords built by stacking a further third onto each
+    of `scale`'s diatonic triads (see `diatonic_triads`) — same
+    stack-and-classify approach, one third taller, so it's correct for any
+    of the 7 modes without a hardcoded per-mode table. In a major scale
+    this is the familiar Imaj7 ii7 iii7 IVmaj7 V7 vi7 viiø7.
+    """
+    n = len(scale.pitch_classes)
+    sevenths = []
+    for degree in range(n):
+        root = scale.pitch_classes[degree]
+        third = scale.pitch_classes[(degree + 2) % n]
+        fifth = scale.pitch_classes[(degree + 4) % n]
+        seventh = scale.pitch_classes[(degree + 6) % n]
+        root_to_third = (third - root) % 12
+        root_to_fifth = (fifth - root) % 12
+        root_to_seventh = (seventh - root) % 12
+        quality = _classify_seventh(root_to_third, root_to_fifth, root_to_seventh)
+        numeral = _SEVENTH_QUALITY_NUMERAL_DECORATION[quality](ROMAN_NUMERALS[degree])
+        sevenths.append(
+            DiatonicSeventhChord(degree=degree + 1, root=scale.notes[degree], quality=quality, roman_numeral=numeral)
+        )
+    return sevenths
 
 
 def relative_key(tonic: str, mode: str) -> tuple[str, str]:
@@ -231,7 +357,7 @@ def analyze_chord_function(chord_root: str, chord_quality: str, key_tonic: str, 
     interval = (chord_root_pc - key_tonic_pc) % 12
 
     base_numeral = _roman_numeral_for_interval(interval, key_mode_resolved)
-    numeral = _QUALITY_NUMERAL_DECORATION.get(chord_quality, lambda n: n + "?")(base_numeral)
+    numeral = _CHORD_QUALITY_NUMERAL_DECORATION.get(chord_quality, lambda n: n + "?")(base_numeral)
 
     scale = build_scale(key_tonic, key_mode_resolved)
     triads = diatonic_triads(scale)

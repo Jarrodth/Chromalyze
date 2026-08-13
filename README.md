@@ -10,7 +10,8 @@ and returns plain data, nothing else.
 
 ## Status
 
-Every planned phase is now implemented:
+Audio analysis (tempo/beats/key/chords) is complete. Music theory is being
+built out toward full, teaching-tool-grade coverage:
 
 - Preprocessing (mono load + resample)
 - BPM detection
@@ -19,8 +20,9 @@ Every planned phase is now implemented:
 - Chord recognition (chroma template matching, segmented on real detected
   beats rather than arbitrary fixed-time windows — see `detect_chords`)
 - Music theory layer: scale spelling (proper key-signature-aware letter
-  spelling, not a fixed chromatic lookup), diatonic triads with roman
-  numerals for any of the 7 modes, relative/parallel key, and roman-numeral
+  spelling, not a fixed chromatic lookup), diatonic triads *and* seventh
+  chords with roman numerals for any of the 7 modes, arbitrary chord
+  spelling from any root + quality, relative/parallel key, and roman-numeral
   analysis of arbitrary (including chromatic/borrowed) chords against a key
 - Interval theory: letter-aware naming and quality (e.g. "Major Third",
   "Augmented Fourth") for the distance between any two notes, plus a
@@ -30,6 +32,9 @@ Every planned phase is now implemented:
   8-string) and bass (standard, drop tunings, 5- and 6-string) — piano/
   keyboard needs no equivalent, since a scale's pitch classes map directly
   onto piano keys with nothing instrument-specific to account for
+
+Not yet built: non-diatonic scales (pentatonic, blues, harmonic/melodic
+minor) and a chord progression library.
 
 ## Usage
 
@@ -69,18 +74,29 @@ chords = detect_chords(y, sr, segment_seconds=1.0)
 ### Music theory
 
 ```python
-from chromalyze import build_scale, diatonic_triads, analyze_chord_function, relative_key, parallel_key
+from chromalyze import build_scale, diatonic_triads, diatonic_sevenths, build_chord, analyze_chord_function, relative_key, parallel_key
 
 scale = build_scale("G", "major")       # Scale(notes=["G","A","B","C","D","E","F#"], ...)
 triads = diatonic_triads(scale)         # [DiatonicChord(degree=1, root="G", quality="major", roman_numeral="I"), ...]
+sevenths = diatonic_sevenths(scale)     # [DiatonicSeventhChord(degree=1, root="G", quality="major7", roman_numeral="Imaj7"), ...]
 relative_key("G", "major")              # ("E", "aeolian") — relative minor
 parallel_key("G", "major")              # ("G", "aeolian") — parallel minor
+
+# Build any chord (triad or seventh) from a root + quality, independent of
+# any scale or key — spelled with real letter names, not just pitch classes:
+build_chord("D", "minor7")              # Chord(root="D", quality="minor7", notes=["D","F","A","C"], pitch_classes=[2,5,9,0])
+build_chord("B", "diminished7")         # notes=["B","D","F","Ab"] — spelled Ab, not G#, to keep one letter per chord tone
 
 # Label a detected chord's harmonic function within a key, including
 # chromatic/borrowed chords (e.g. a "bVII" chord borrowed from the parallel minor):
 analyze_chord_function("F", "major", key_tonic="G", key_mode="major")
 # ChordFunction(roman_numeral="bVII", is_diatonic=False)
 ```
+
+`CHORD_INTERVALS` (importable directly) lists every quality `build_chord` and
+the diatonic-chord builders understand: `major`, `minor`, `diminished`,
+`augmented`, `major7`, `dominant7`, `minor7`, `minor-major7`,
+`half-diminished7`, `diminished7`, `augmented-major7`, `augmented7`.
 
 ### Intervals
 

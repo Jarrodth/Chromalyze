@@ -7,11 +7,16 @@ from .key import KeyResult, detect_key
 from .preprocessing import load_audio
 from .tempo import detect_bpm
 from .theory import (
+    CHORD_INTERVALS,
+    Chord,
     ChordFunction,
     DiatonicChord,
+    DiatonicSeventhChord,
     Scale,
     analyze_chord_function,
+    build_chord,
     build_scale,
+    diatonic_sevenths,
     diatonic_triads,
     parallel_key,
     relative_key,
@@ -32,6 +37,11 @@ __all__ = [
     "Scale",
     "diatonic_triads",
     "DiatonicChord",
+    "diatonic_sevenths",
+    "DiatonicSeventhChord",
+    "build_chord",
+    "Chord",
+    "CHORD_INTERVALS",
     "analyze_chord_function",
     "ChordFunction",
     "relative_key",
