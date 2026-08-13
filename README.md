@@ -22,6 +22,9 @@ Every planned phase is now implemented:
   spelling, not a fixed chromatic lookup), diatonic triads with roman
   numerals for any of the 7 modes, relative/parallel key, and roman-numeral
   analysis of arbitrary (including chromatic/borrowed) chords against a key
+- Interval theory: letter-aware naming and quality (e.g. "Major Third",
+  "Augmented Fourth") for the distance between any two notes, plus a
+  semitone-only lookup for when no note spelling is available
 - Instrument/tuning layer: maps a scale or chord onto real fretboard
   positions for guitar (standard, drop tunings, alternate tunings, 7- and
   8-string) and bass (standard, drop tunings, 5- and 6-string) — piano/
@@ -77,6 +80,28 @@ parallel_key("G", "major")              # ("G", "aeolian") — parallel minor
 # chromatic/borrowed chords (e.g. a "bVII" chord borrowed from the parallel minor):
 analyze_chord_function("F", "major", key_tonic="G", key_mode="major")
 # ChordFunction(roman_numeral="bVII", is_diatonic=False)
+```
+
+### Intervals
+
+```python
+from chromalyze import interval_between, interval_from_semitones, common_interval_reference
+
+interval_between("C", "E")     # Interval(degree=3, quality="major", semitones=4, name="Major Third", short_name="M3")
+interval_between("F", "B")     # Interval(degree=4, quality="augmented", semitones=6, name="Augmented Fourth", short_name="A4")
+interval_between("B", "F")     # Interval(degree=5, quality="diminished", semitones=6, name="Diminished Fifth", short_name="d5")
+# F->B and B->F are both 6 semitones apart, but letter distance (a 4th vs
+# a 5th) makes them genuinely different intervals, not just two names for
+# the same thing — this only works with real note names, which is why
+# `interval_between` takes spelled notes rather than bare pitch classes.
+
+# No note spelling on hand (e.g. straight from a raw pitch-class
+# difference)? Falls back to music's single most conventional name:
+interval_from_semitones(6)     # "Augmented Fourth" — the tritone's usual spelling
+
+# A ready-made reference table, handy for teaching:
+for i in common_interval_reference():
+    print(i.short_name, i.name)  # P1 Perfect Unison, m2 Minor Second, M2 Major Second, ...
 ```
 
 ### Instruments

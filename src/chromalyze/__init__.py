@@ -2,6 +2,7 @@ from .analyze import AnalysisResult, analyze
 from .beats import BeatResult, detect_beats
 from .chords import ChordSegment, detect_chords
 from .instruments import FretPosition, PRESET_TUNINGS, Tuning, fretboard_positions
+from .intervals import Interval, common_interval_reference, interval_between, interval_from_semitones
 from .key import KeyResult, detect_key
 from .preprocessing import load_audio
 from .tempo import detect_bpm
@@ -39,4 +40,8 @@ __all__ = [
     "PRESET_TUNINGS",
     "fretboard_positions",
     "FretPosition",
+    "Interval",
+    "interval_between",
+    "interval_from_semitones",
+    "common_interval_reference",
 ]
