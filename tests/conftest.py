@@ -174,3 +174,45 @@ def chord_progression_clip(tmp_path):
     chords = [(0, "major"), (9, "minor"), (5, "major"), (7, "major")]
     make_chord_progression_clip(chords, seconds_per_chord=2.0, sr=22050, path=path)
     return path, ["C", "Am", "F", "G"], 2.0
+
+
+def make_rhythmic_chord_progression_clip(
+    chords: list[tuple[int, str]], bpm: float, beats_per_chord: int, sr: int, path: str
+) -> None:
+    """Write a real WAV file playing a chord progression as rhythmic
+    "strums" (short decaying bursts, not held tones) at a steady bpm — real
+    onset content a beat tracker can actually lock onto, unlike
+    make_chord_progression_clip's smooth sustained chords. Needed to test
+    beat-synchronous chord segmentation for real, since that only helps
+    once there's something for detect_beats to genuinely detect.
+    """
+    beat_interval_samples = int(60.0 / bpm * sr)
+    strum_samples = int(0.25 * sr)
+    decay = np.exp(-np.linspace(0, 4, strum_samples))
+    t = np.arange(strum_samples) / sr
+
+    segments = []
+    for root_pc, quality in chords:
+        intervals = [0, 4, 7] if quality == "major" else [0, 3, 7]
+        for _ in range(beats_per_chord):
+            strum = np.zeros(strum_samples, dtype=np.float32)
+            for interval in intervals:
+                pc = (root_pc + interval) % 12
+                freq = note_freq(pc, octave=3)
+                strum += (decay * np.sin(2 * np.pi * freq * t)).astype(np.float32)
+            strum /= len(intervals)
+            pad = np.zeros(max(0, beat_interval_samples - strum_samples), dtype=np.float32)
+            segments.append(np.concatenate([strum, pad]))
+
+    audio = np.concatenate(segments)
+    sf.write(path, audio, sr)
+
+
+@pytest.fixture
+def rhythmic_chord_progression_clip(tmp_path):
+    path = str(tmp_path / "rhythmic_chord_progression.wav")
+    # G - Em - C - D, 3 beats each at 120bpm (1.5s per chord).
+    chords = [(7, "major"), (4, "minor"), (0, "major"), (2, "major")]
+    make_rhythmic_chord_progression_clip(chords, bpm=120.0, beats_per_chord=3, sr=22050, path=path)
+    expected_boundaries = [0.0, 1.5, 3.0, 4.5, 6.0]
+    return path, ["G", "Em", "C", "D"], expected_boundaries

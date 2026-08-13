@@ -12,11 +12,14 @@ def test_analyze_populates_implemented_fields(click_track_120bpm):
     assert any(abs(ratio - m) < 0.03 for m in (0.5, 1.0, 2.0))
 
 
-def test_analyze_leaves_unimplemented_fields_as_none(click_track_120bpm):
-    path, _ = click_track_120bpm
+def test_analyze_populates_scale_matching_the_detected_key(tonal_clip_c_major):
+    path, _, _ = tonal_clip_c_major
     result = analyze(path)
 
-    assert result.scale is None
+    assert result.scale is not None
+    assert result.scale.tonic == "C"
+    assert result.scale.mode == "ionian"
+    assert result.scale.notes == ["C", "D", "E", "F", "G", "A", "B"]
 
 
 def test_analyze_populates_key(tonal_clip_c_major):

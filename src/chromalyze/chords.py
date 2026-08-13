@@ -79,23 +79,55 @@ def _merge_adjacent(segments: list[ChordSegment]) -> list[ChordSegment]:
     return merged
 
 
-def detect_chords(y: np.ndarray, sr: int, segment_seconds: float = DEFAULT_SEGMENT_SECONDS) -> list[ChordSegment]:
-    """Estimate a chord for each fixed-length segment of the track, then
-    merge consecutive segments that land on the same chord.
+def _segment_boundaries(
+    total_duration: float, segment_seconds: float, beat_times: list[float] | None
+) -> list[tuple[float, float]]:
+    if not beat_times:
+        boundaries = []
+        start = 0.0
+        while start < total_duration:
+            end = min(start + segment_seconds, total_duration)
+            boundaries.append((start, end))
+            start = end
+        return boundaries
+
+    # Beat-synchronous: segment between consecutive beats, plus a lead-in
+    # before the first beat and a tail after the last one if the track
+    # extends past them. Real chord changes happen on beats, not at
+    # arbitrary fixed-time offsets, so aligning segment boundaries to the
+    # actual beat grid avoids analyzing a window that straddles part of one
+    # chord and part of the next — a window like that captures a genuine
+    # blend of both chords' notes, which can correlate best with a third
+    # chord that was never actually played.
+    points = sorted({0.0, *(b for b in beat_times if 0.0 < b < total_duration), total_duration})
+    return list(zip(points[:-1], points[1:]))
+
+
+def detect_chords(
+    y: np.ndarray,
+    sr: int,
+    segment_seconds: float = DEFAULT_SEGMENT_SECONDS,
+    beat_times: list[float] | None = None,
+) -> list[ChordSegment]:
+    """Estimate a chord for each segment of the track, then merge
+    consecutive segments that land on the same chord.
+
+    If `beat_times` is given (e.g. from detect_beats), segments are aligned
+    to those beat boundaries instead of arbitrary fixed-length windows —
+    see `_segment_boundaries`. Falls back to fixed `segment_seconds`
+    windows if no beat times are given, so this still works standalone
+    without requiring beat detection to have already run.
     """
     chroma = librosa.feature.chroma_cqt(y=y, sr=sr)
     frame_times = librosa.frames_to_time(np.arange(chroma.shape[1]), sr=sr, hop_length=_CHROMA_HOP_LENGTH)
     total_duration = len(y) / sr
 
     raw_segments: list[ChordSegment] = []
-    start = 0.0
-    while start < total_duration:
-        end = min(start + segment_seconds, total_duration)
+    for start, end in _segment_boundaries(total_duration, segment_seconds, beat_times):
         frame_mask = (frame_times >= start) & (frame_times < end)
         if np.any(frame_mask):
             chroma_vector = chroma[:, frame_mask].mean(axis=1)
             chord, correlation = _best_chord_for_chroma(chroma_vector)
             raw_segments.append(ChordSegment(start=start, end=end, chord=chord, correlation=correlation))
-        start = end
 
     return _merge_adjacent(raw_segments)
