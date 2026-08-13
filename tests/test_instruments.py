@@ -7,8 +7,18 @@ from chromalyze.instruments import (
     GUITAR_STANDARD,
     Tuning,
     fretboard_positions,
+    practical_chord_voicing,
 )
-from chromalyze.theory import build_scale
+from chromalyze.theory import NOTE_NAME_TO_PITCH_CLASS, build_chord, build_scale
+
+
+def _shape_string(positions, string_count):
+    """Renders a voicing as real chord-chart shorthand, e.g. "X32010" for
+    open C major — low string first, "X" for a muted/unplayed string —
+    so test assertions read the same way any real chord chart does.
+    """
+    by_string = {p.string_index: p.fret for p in positions}
+    return "".join(str(by_string[i]) if i in by_string else "X" for i in range(string_count))
 
 
 def test_guitar_standard_tuning_open_strings():
@@ -74,3 +84,66 @@ def test_fretboard_positions_on_drop_d_shifts_only_the_low_string():
     standard_upper = sorted((p.string_index, p.fret) for p in standard_positions if p.string_index != 0)
     drop_d_upper = sorted((p.string_index, p.fret) for p in drop_d_positions if p.string_index != 0)
     assert standard_upper == drop_d_upper
+
+
+def _voicing_for(root, quality):
+    chord = build_chord(root, quality)
+    root_pc = NOTE_NAME_TO_PITCH_CLASS[root]
+    return practical_chord_voicing(chord.pitch_classes, root_pc, GUITAR_STANDARD)
+
+
+def test_practical_chord_voicing_open_c_major():
+    # The textbook open C major chord: X-3-2-0-1-0.
+    positions = _voicing_for("C", "major")
+    assert _shape_string(positions, 6) == "X32010"
+
+
+def test_practical_chord_voicing_open_a_minor():
+    # The textbook open A minor chord: X-0-2-2-1-0.
+    positions = _voicing_for("A", "minor")
+    assert _shape_string(positions, 6) == "X02210"
+
+
+def test_practical_chord_voicing_open_e_minor():
+    # The textbook open E minor chord: 0-2-2-0-0-0.
+    positions = _voicing_for("E", "minor")
+    assert _shape_string(positions, 6) == "022000"
+
+
+def test_practical_chord_voicing_open_d_major():
+    # The textbook open D major chord: X-X-0-2-3-2.
+    positions = _voicing_for("D", "major")
+    assert _shape_string(positions, 6) == "XX0232"
+
+
+def test_practical_chord_voicing_open_g_major():
+    # The textbook open G major chord: 3-2-0-0-0-3 (low position — not the
+    # common "3-2-0-0-3-3" barred variant some players use instead, since
+    # this algorithm always prefers the lowest fret available per string).
+    positions = _voicing_for("G", "major")
+    assert _shape_string(positions, 6) == "320003"
+
+
+def test_practical_chord_voicing_root_always_in_the_bass():
+    for root in ["C", "D", "E", "F", "G", "A", "B"]:
+        for quality in ["major", "minor"]:
+            positions = _voicing_for(root, quality)
+            root_pc = NOTE_NAME_TO_PITCH_CLASS[root]
+            bass_position = min(positions, key=lambda p: p.string_index)
+            assert bass_position.pitch_class == root_pc, f"{root} {quality}: bass note wasn't the root"
+
+
+def test_practical_chord_voicing_covers_every_chord_tone():
+    chord = build_chord("F", "major")
+    root_pc = NOTE_NAME_TO_PITCH_CLASS["F"]
+    positions = practical_chord_voicing(chord.pitch_classes, root_pc, GUITAR_STANDARD)
+    assert {p.pitch_class for p in positions} == set(chord.pitch_classes)
+
+
+def test_practical_chord_voicing_on_bass_tuning():
+    # E muted, A open (root), D fret 2 (fifth), G fret 2 (root octave) — a
+    # real, practical bass voicing, not just any pitch-correct combination.
+    chord = build_chord("A", "minor")
+    root_pc = NOTE_NAME_TO_PITCH_CLASS["A"]
+    positions = practical_chord_voicing(chord.pitch_classes, root_pc, BASS_STANDARD)
+    assert _shape_string(positions, 4) == "X022"

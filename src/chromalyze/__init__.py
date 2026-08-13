@@ -10,7 +10,7 @@ from .caged import (
     caged_scale_boxes,
 )
 from .chords import ChordSegment, detect_chords
-from .instruments import FretPosition, PRESET_TUNINGS, Tuning, fretboard_positions
+from .instruments import FretPosition, PRESET_TUNINGS, Tuning, fretboard_positions, practical_chord_voicing
 from .intervals import Interval, common_interval_reference, interval_between, interval_from_semitones
 from .key import KeyResult, detect_key
 from .meter import TimeSignatureResult, detect_beats_per_measure
@@ -69,6 +69,7 @@ __all__ = [
     "PRESET_TUNINGS",
     "fretboard_positions",
     "FretPosition",
+    "practical_chord_voicing",
     "Interval",
     "interval_between",
     "interval_from_semitones",

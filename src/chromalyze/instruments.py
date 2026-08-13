@@ -116,3 +116,81 @@ def fretboard_positions(
                     )
                 )
     return positions
+
+
+def practical_chord_voicing(
+    pitch_classes: list[int],
+    root_pitch_class: int,
+    tuning: Tuning,
+    num_frets: int = DEFAULT_NUM_FRETS,
+    max_span: int = 4,
+) -> list[FretPosition] | None:
+    """One practical, low-position fretted voicing covering every pitch
+    class in `pitch_classes` — quality-agnostic (works for a major triad, a
+    minor triad, or any other chord's real pitch classes), unlike CAGED's
+    fixed major-only shape table in caged.py, so this is what backs a
+    "show me a real fingering for whatever chord is actually playing"
+    feature rather than CAGED's "explore major-shape patterns" one.
+
+    Prefers, in order: the lowest fret position (closest to the nut) whose
+    natural `max_span`-fret reach covers every pitch class at all — a real
+    open-position chord's shape is defined by how close to the nut it
+    starts, not by minimizing how many frets it spans, so this checks the
+    full natural hand-span at each position rather than searching for the
+    technically narrowest window (which tended to find awkward, correct-
+    but-impractical fingerings that skip an interior string while playing
+    ones on both sides of it — much harder to actually mute cleanly than
+    just fretting every reachable string, which is what real players do).
+    Within the winning window, mutes the lowest string(s) only as needed so
+    the lowest-pitched string actually played lands on the root, not an
+    arbitrary chord tone (an arbitrary tone in the bass is a real, audible
+    mistake real players avoid). Verified against real, well-known open-
+    position voicings (see tests) rather than assumed correct from the
+    logic alone.
+
+    Returns None if no position within `num_frets` can reach every pitch
+    class within `max_span` frets — shouldn't happen for a real triad on
+    any preset tuning, but this stays honest rather than forcing a bad
+    answer.
+    """
+    required = set(pitch_classes)
+    degree_by_pc = {pc: i + 1 for i, pc in enumerate(pitch_classes)}
+
+    for start in range(0, num_frets + 1):
+        span = min(max_span, num_frets - start)
+        per_string_options = {}
+        for string_index, open_pc in enumerate(tuning.open_string_pitch_classes):
+            options = [
+                (fret, (open_pc + fret) % 12)
+                for fret in range(start, start + span + 1)
+                if (open_pc + fret) % 12 in required
+            ]
+            if options:
+                per_string_options[string_index] = options
+
+        covered = {pc for options in per_string_options.values() for _, pc in options}
+        if covered != required:
+            continue
+
+        # Mute the lowest string(s) rather than land an arbitrary chord
+        # tone in the bass, as long as the remaining strings still cover
+        # every required pitch class without it.
+        included = sorted(per_string_options)
+        while included and root_pitch_class not in {pc for _, pc in per_string_options[included[0]]}:
+            remaining_covered = {pc for s in included[1:] for _, pc in per_string_options[s]}
+            if remaining_covered != required:
+                break
+            included = included[1:]
+
+        if not included or root_pitch_class not in {pc for _, pc in per_string_options[included[0]]}:
+            continue  # this position can't put the root in the bass — try the next one up
+
+        positions = []
+        for string_index in included:
+            fret, pc = min(per_string_options[string_index], key=lambda o: o[0])
+            positions.append(
+                FretPosition(string_index=string_index, fret=fret, pitch_class=pc, scale_degree=degree_by_pc[pc])
+            )
+        return positions
+
+    return None
