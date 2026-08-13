@@ -140,3 +140,37 @@ def ambiguous_scale_clip_c(tmp_path):
     path = str(tmp_path / "ambiguous_scale_c.wav")
     make_ambiguous_scale_clip(tonic_pc=0, duration_seconds=7.0, sr=22050, path=path)
     return path
+
+
+def make_chord_progression_clip(
+    chords: list[tuple[int, str]], seconds_per_chord: float, sr: int, path: str
+) -> None:
+    """Write a real WAV file playing a sequence of held triads — real
+    additive sine synthesis at real 12-TET frequencies, not a pre-made
+    audio file. `chords` is a list of (root pitch class, "major"/"minor").
+    """
+    samples_per_chord = int(seconds_per_chord * sr)
+    t = np.arange(samples_per_chord) / sr
+
+    segments = []
+    for root_pc, quality in chords:
+        intervals = [0, 4, 7] if quality == "major" else [0, 3, 7]
+        chord_wave = np.zeros(samples_per_chord, dtype=np.float32)
+        for interval in intervals:
+            pc = (root_pc + interval) % 12
+            freq = note_freq(pc, octave=3)
+            chord_wave += np.sin(2 * np.pi * freq * t).astype(np.float32)
+        chord_wave /= len(intervals)
+        segments.append(chord_wave)
+
+    audio = np.concatenate(segments)
+    sf.write(path, audio, sr)
+
+
+@pytest.fixture
+def chord_progression_clip(tmp_path):
+    path = str(tmp_path / "chord_progression.wav")
+    # C - Am - F - G, 2 seconds each — a textbook I-vi-IV-V progression.
+    chords = [(0, "major"), (9, "minor"), (5, "major"), (7, "major")]
+    make_chord_progression_clip(chords, seconds_per_chord=2.0, sr=22050, path=path)
+    return path, ["C", "Am", "F", "G"], 2.0

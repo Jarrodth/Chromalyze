@@ -16,10 +16,10 @@ This is under active, staged development. Currently implemented:
 - BPM detection
 - Beat tracking
 - Key detection (Krumhansl-Schmuckler profile correlation over Librosa chroma)
+- Chord recognition (per-segment chroma template matching)
 
 Not yet implemented (present in the result shape as `None` for now):
 
-- Chord recognition
 - Music theory layer (scale degrees, roman numerals, etc.)
 
 ## Usage
@@ -35,19 +35,20 @@ result.key_confidence  # 0.27 — gap between best and 2nd-best key candidate;
                         # under ~0.05 usually means genuine relative
                         # major/minor ambiguity (they share every pitch
                         # class), over ~0.15 is a clear, confident match
-result.chords          # None (not yet implemented)
-result.scale           # None (not yet implemented)
+result.chords  # [ChordSegment(start=0.0, end=2.0, chord="C", correlation=0.99), ...]
+result.scale   # None (not yet implemented)
 ```
 
 Individual stages are also available directly:
 
 ```python
-from chromalyze import load_audio, detect_bpm, detect_beats, detect_key
+from chromalyze import load_audio, detect_bpm, detect_beats, detect_key, detect_chords
 
 y, sr = load_audio("song.wav")
 bpm = detect_bpm(y, sr)
-beats = detect_beats(y, sr)  # BeatResult(bpm=..., beat_times=[...])
-key = detect_key(y, sr)      # KeyResult(tonic="C", mode="major", key="C major", correlation=0.97, confidence=0.27)
+beats = detect_beats(y, sr)    # BeatResult(bpm=..., beat_times=[...])
+key = detect_key(y, sr)        # KeyResult(tonic="C", mode="major", key="C major", correlation=0.97, confidence=0.27)
+chords = detect_chords(y, sr)  # [ChordSegment(start=0.0, end=2.0, chord="C", correlation=0.99), ...]
 ```
 
 ## Development

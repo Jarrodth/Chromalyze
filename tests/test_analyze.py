@@ -16,7 +16,6 @@ def test_analyze_leaves_unimplemented_fields_as_none(click_track_120bpm):
     path, _ = click_track_120bpm
     result = analyze(path)
 
-    assert result.chords is None
     assert result.scale is None
 
 
@@ -26,3 +25,12 @@ def test_analyze_populates_key(tonal_clip_c_major):
     assert result.key == "C major"
     assert result.key_confidence is not None
     assert result.key_confidence > 0.15
+
+
+def test_analyze_populates_chords(chord_progression_clip):
+    path, expected_chords, _ = chord_progression_clip
+    result = analyze(path)
+
+    assert result.chords is not None
+    detected_chords = [s.chord for s in result.chords]
+    assert detected_chords == expected_chords
