@@ -59,22 +59,24 @@ def _accidental_suffix(diff: int) -> str:
     return symbol * abs(diff)
 
 
-def _spell_intervals(tonic: str, intervals: list[int], letter_step: int) -> list[str]:
+def _spell_intervals(tonic: str, intervals: list[int], letter_offsets: list[int]) -> list[str]:
     """Spell each of `intervals` (semitones above `tonic`) using real letter
-    names with the correct accidental, rather than a fixed chromatic
-    lookup that could reuse a letter or skip one entirely. `letter_step`
-    controls how many letters each successive interval advances by: 1 for
-    a 7-note scale (consecutive letters), 2 for a tertian chord (letters
-    skip by a third each time, e.g. C-E-G-B skips D/F/A) — the only real
-    difference between spelling a scale and spelling a chord.
+    names with the correct accidental, rather than a fixed chromatic lookup
+    that could reuse a letter or skip one entirely. `letter_offsets[i]` is
+    how many letters past the tonic's own letter note `i` sits: consecutive
+    integers (0,1,2,...) for a 7-note scale that uses every letter once;
+    every-other integers (0,2,4,...) for a tertian chord, whose letters skip
+    by a third each time (e.g. C-E-G-B skips D/F/A); or an arbitrary,
+    possibly-repeating sequence for a scale that skips or reuses letters,
+    like a pentatonic or blues scale.
     """
     tonic_pc = NOTE_NAME_TO_PITCH_CLASS[tonic]
     start_letter_index = LETTER_ORDER.index(tonic[0])
 
     notes = []
-    for i, interval in enumerate(intervals):
+    for interval, letter_offset in zip(intervals, letter_offsets):
         target_pc = (tonic_pc + interval) % 12
-        letter = LETTER_ORDER[(start_letter_index + i * letter_step) % 7]
+        letter = LETTER_ORDER[(start_letter_index + letter_offset) % 7]
         natural_pc = NATURAL_LETTER_PITCH_CLASS[letter]
         diff = (target_pc - natural_pc) % 12
         if diff > 6:
@@ -91,7 +93,8 @@ def spell_scale(tonic: str, mode: str) -> list[str]:
     F#, never G A B C D E Gb — that reuses "G" and never uses "F").
     """
     mode = _resolve_mode(mode)
-    return _spell_intervals(tonic, MODE_INTERVALS[mode], letter_step=1)
+    intervals = MODE_INTERVALS[mode]
+    return _spell_intervals(tonic, intervals, letter_offsets=list(range(len(intervals))))
 
 
 @dataclass
@@ -169,7 +172,7 @@ def build_chord(root: str, quality: str) -> Chord:
     intervals = CHORD_INTERVALS[quality]
     root_pc = NOTE_NAME_TO_PITCH_CLASS[root]
     pitch_classes = [(root_pc + i) % 12 for i in intervals]
-    notes = _spell_intervals(root, intervals, letter_step=2)
+    notes = _spell_intervals(root, intervals, letter_offsets=[i * 2 for i in range(len(intervals))])
     return Chord(root=root, quality=quality, notes=notes, pitch_classes=pitch_classes)
 
 

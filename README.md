@@ -32,9 +32,10 @@ built out toward full, teaching-tool-grade coverage:
   8-string) and bass (standard, drop tunings, 5- and 6-string) — piano/
   keyboard needs no equivalent, since a scale's pitch classes map directly
   onto piano keys with nothing instrument-specific to account for
+- Named non-diatonic scales: major/minor pentatonic, blues, harmonic minor,
+  melodic minor (jazz/ascending form) — see `build_named_scale`
 
-Not yet built: non-diatonic scales (pentatonic, blues, harmonic/melodic
-minor) and a chord progression library.
+Not yet built: a chord progression library.
 
 ## Usage
 
@@ -97,6 +98,28 @@ analyze_chord_function("F", "major", key_tonic="G", key_mode="major")
 the diatonic-chord builders understand: `major`, `minor`, `diminished`,
 `augmented`, `major7`, `dominant7`, `minor7`, `minor-major7`,
 `half-diminished7`, `diminished7`, `augmented-major7`, `augmented7`.
+
+### Named scales
+
+```python
+from chromalyze import build_named_scale, NAMED_SCALE_INTERVALS, diatonic_triads
+
+build_named_scale("C", "major_pentatonic")  # Scale(notes=["C","D","E","G","A"], ...)
+build_named_scale("A", "minor_pentatonic")  # Scale(notes=["A","C","D","E","G"], ...)
+build_named_scale("C", "blues")             # Scale(notes=["C","Eb","F","Gb","G","Bb"], ...)
+build_named_scale("A", "harmonic_minor")    # Scale(notes=["A","B","C","D","E","F","G#"], ...)
+build_named_scale("A", "melodic_minor")     # Scale(notes=["A","B","C","D","E","F#","G#"], ...)
+
+# Harmonic/melodic minor are ordinary 7-note scales, so the diatonic-chord
+# tools from the "Music theory" section above work on them directly — e.g.
+# harmonic minor's raised 7th gives it a real dominant V (not natural
+# minor's v) and a distinctive augmented bIII chord:
+diatonic_triads(build_named_scale("A", "harmonic_minor"))
+# [..., DiatonicChord(degree=3, root="C", quality="augmented", roman_numeral="III+"), ...,
+#      DiatonicChord(degree=5, root="E", quality="major", roman_numeral="V"), ...]
+
+sorted(NAMED_SCALE_INTERVALS)  # ['blues', 'harmonic_minor', 'major_pentatonic', 'melodic_minor', 'minor_pentatonic']
+```
 
 ### Intervals
 
