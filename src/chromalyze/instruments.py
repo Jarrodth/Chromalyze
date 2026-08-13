@@ -10,7 +10,7 @@ different depending on tuning and string count.
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 from .theory import NOTE_NAME_TO_PITCH_CLASS
 
@@ -21,10 +21,15 @@ DEFAULT_NUM_FRETS = 24
 class Tuning:
     name: str
     open_string_pitch_classes: list[int]  # lowest-pitched string first
+    open_string_notes: list[str] = field(default_factory=list)  # letter names, same order/length
 
     @classmethod
     def from_note_names(cls, name: str, notes: list[str]) -> "Tuning":
-        return cls(name=name, open_string_pitch_classes=[NOTE_NAME_TO_PITCH_CLASS[n] for n in notes])
+        return cls(
+            name=name,
+            open_string_pitch_classes=[NOTE_NAME_TO_PITCH_CLASS[n] for n in notes],
+            open_string_notes=list(notes),
+        )
 
 
 # Guitar — standard + drop tunings + common alternate tunings + extended range.
