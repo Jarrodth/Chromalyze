@@ -16,6 +16,13 @@ def test_analyze_leaves_unimplemented_fields_as_none(click_track_120bpm):
     path, _ = click_track_120bpm
     result = analyze(path)
 
-    assert result.key is None
     assert result.chords is None
     assert result.scale is None
+
+
+def test_analyze_populates_key(tonal_clip_c_major):
+    path, _, _ = tonal_clip_c_major
+    result = analyze(path)
+    assert result.key == "C major"
+    assert result.key_confidence is not None
+    assert result.key_confidence > 0.15

@@ -41,3 +41,102 @@ def click_track_90bpm(tmp_path):
     path = str(tmp_path / "click_90bpm.wav")
     make_click_track(bpm=90.0, duration_seconds=10.0, sr=22050, path=path)
     return path, 90.0
+
+
+def note_freq(pitch_class: int, octave: int = 4) -> float:
+    """Frequency in Hz for a pitch class (0=C .. 11=B) in the given octave,
+    12-tone equal temperament, A4 = 440Hz."""
+    semitones_from_a4 = (pitch_class - 9) + 12 * (octave - 4)
+    return 440.0 * (2.0 ** (semitones_from_a4 / 12.0))
+
+
+def make_tonal_clip(tonic_pc: int, mode: str, duration_seconds: float, sr: int, path: str) -> None:
+    """Write a real WAV file playing a I-IV-V-I (or i-iv-V-i for minor)
+    chord progression in the given key — strong, unambiguous tonal/cadential
+    content a key detector should have no trouble with, built from real
+    additive sine synthesis at real 12-TET frequencies, not a pre-made
+    audio file.
+    """
+    if mode == "major":
+        # (root semitone offset, chord quality) for I, IV, V, I
+        chords = [(0, "major"), (5, "major"), (7, "major"), (0, "major")]
+    else:
+        # i, iv, V (major dominant — standard harmonic-minor-style cadence,
+        # gives a much stronger/less ambiguous key cue than a plain v)
+        chords = [(0, "minor"), (5, "minor"), (7, "major"), (0, "minor")]
+
+    chord_seconds = duration_seconds / len(chords)
+    chord_samples = int(chord_seconds * sr)
+    t = np.arange(chord_samples) / sr
+
+    segments = []
+    for root_offset, quality in chords:
+        intervals = [0, 4, 7] if quality == "major" else [0, 3, 7]
+        chord_wave = np.zeros(chord_samples, dtype=np.float32)
+        for interval in intervals:
+            pc = (tonic_pc + root_offset + interval) % 12
+            freq = note_freq(pc, octave=3)
+            chord_wave += np.sin(2 * np.pi * freq * t).astype(np.float32)
+        chord_wave /= len(intervals)
+        segments.append(chord_wave)
+
+    audio = np.concatenate(segments)
+    sf.write(path, audio, sr)
+
+
+@pytest.fixture
+def tonal_clip_c_major(tmp_path):
+    path = str(tmp_path / "tonal_c_major.wav")
+    make_tonal_clip(tonic_pc=0, mode="major", duration_seconds=8.0, sr=22050, path=path)
+    return path, "C", "major"
+
+
+@pytest.fixture
+def tonal_clip_a_minor(tmp_path):
+    path = str(tmp_path / "tonal_a_minor.wav")
+    make_tonal_clip(tonic_pc=9, mode="minor", duration_seconds=8.0, sr=22050, path=path)
+    return path, "A", "minor"
+
+
+@pytest.fixture
+def tonal_clip_e_major(tmp_path):
+    path = str(tmp_path / "tonal_e_major.wav")
+    make_tonal_clip(tonic_pc=4, mode="major", duration_seconds=8.0, sr=22050, path=path)
+    return path, "E", "major"
+
+
+@pytest.fixture
+def tonal_clip_f_sharp_minor(tmp_path):
+    path = str(tmp_path / "tonal_fsharp_minor.wav")
+    make_tonal_clip(tonic_pc=6, mode="minor", duration_seconds=8.0, sr=22050, path=path)
+    return path, "F#", "minor"
+
+
+def make_ambiguous_scale_clip(tonic_pc: int, duration_seconds: float, sr: int, path: str) -> None:
+    """Write a real WAV file playing the 7 notes of a major scale in
+    ascending order, each held equally, with no chords and no cadence —
+    deliberately the hardest possible case for key detection, since a major
+    scale and its relative natural minor scale share every pitch class.
+    There's nothing in this signal to tell the detector which of the two
+    is actually the tonic, unlike the I-IV-V-I clips above.
+    """
+    major_intervals = [0, 2, 4, 5, 7, 9, 11]
+    note_seconds = duration_seconds / len(major_intervals)
+    note_samples = int(note_seconds * sr)
+    t = np.arange(note_samples) / sr
+
+    segments = []
+    for interval in major_intervals:
+        pc = (tonic_pc + interval) % 12
+        freq = note_freq(pc, octave=4)
+        segments.append(np.sin(2 * np.pi * freq * t).astype(np.float32))
+
+    audio = np.concatenate(segments)
+    sf.write(path, audio, sr)
+
+
+@pytest.fixture
+def ambiguous_scale_clip_c(tmp_path):
+    path = str(tmp_path / "ambiguous_scale_c.wav")
+    make_ambiguous_scale_clip(tonic_pc=0, duration_seconds=7.0, sr=22050, path=path)
+    return path
