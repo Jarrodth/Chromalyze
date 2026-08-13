@@ -5,6 +5,14 @@ from .instruments import FretPosition, PRESET_TUNINGS, Tuning, fretboard_positio
 from .intervals import Interval, common_interval_reference, interval_between, interval_from_semitones
 from .key import KeyResult, detect_key
 from .preprocessing import load_audio
+from .progressions import (
+    NAMED_PROGRESSIONS,
+    NamedProgression,
+    ProgressionChord,
+    ProgressionStep,
+    identify_progression,
+    realize_progression,
+)
 from .scales import NAMED_SCALE_INTERVALS, build_named_scale
 from .tempo import detect_bpm
 from .theory import (
@@ -57,4 +65,10 @@ __all__ = [
     "common_interval_reference",
     "build_named_scale",
     "NAMED_SCALE_INTERVALS",
+    "NAMED_PROGRESSIONS",
+    "NamedProgression",
+    "ProgressionStep",
+    "ProgressionChord",
+    "realize_progression",
+    "identify_progression",
 ]

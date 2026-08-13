@@ -312,13 +312,13 @@ def parallel_key(tonic: str, mode: str) -> tuple[str, str]:
     return tonic, parallel_mode
 
 
-def _roman_numeral_for_interval(interval: int, mode: str) -> str:
-    """Base (uppercase, undecorated) roman numeral for a semitone interval
-    above the tonic, relative to `mode`'s own scale degrees — e.g. in major,
-    interval 4 is the natural (major) 3rd -> "III"; interval 3 is a
-    semitone flat of that -> "bIII". Handles any interval, not just ones
-    that land exactly on a scale degree, so chromatic/borrowed chords get a
-    sensible numeral too.
+def _nearest_scale_degree(interval: int, mode: str) -> tuple[int, int]:
+    """The scale degree (0-6) whose plain reference position is closest to
+    `interval` semitones above the tonic, and the signed semitone offset
+    from that reference — the shared math behind both naming a chromatic
+    interval's roman numeral and spelling its root note's letter, since
+    both are really "which scale degree is this closest to, and by how
+    much is it altered".
     """
     resolved_mode = _resolve_mode(mode)
     scale_intervals = MODE_INTERVALS[resolved_mode]
@@ -339,7 +339,30 @@ def _roman_numeral_for_interval(interval: int, mode: str) -> str:
             best_diff = diff
             best_degree = degree
 
-    return _accidental_suffix(best_diff) + ROMAN_NUMERALS[best_degree]
+    return best_degree, best_diff
+
+
+def _roman_numeral_for_interval(interval: int, mode: str) -> str:
+    """Base (uppercase, undecorated) roman numeral for a semitone interval
+    above the tonic, relative to `mode`'s own scale degrees — e.g. in major,
+    interval 4 is the natural (major) 3rd -> "III"; interval 3 is a
+    semitone flat of that -> "bIII". Handles any interval, not just ones
+    that land exactly on a scale degree, so chromatic/borrowed chords get a
+    sensible numeral too.
+    """
+    degree, diff = _nearest_scale_degree(interval, mode)
+    return _accidental_suffix(diff) + ROMAN_NUMERALS[degree]
+
+
+def _root_name_for_interval(tonic: str, mode: str, interval: int) -> str:
+    """The correctly letter-spelled note name for a chord root sitting
+    `interval` semitones above `tonic`, using the same nearest-scale-degree
+    logic as `_roman_numeral_for_interval` — e.g. in C major, interval 10
+    (a bVII root) is spelled "Bb", reusing the 7th degree's own letter "B"
+    with a flat, not "A#".
+    """
+    degree, _ = _nearest_scale_degree(interval, mode)
+    return _spell_intervals(tonic, [interval], [degree])[0]
 
 
 @dataclass

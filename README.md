@@ -10,8 +10,8 @@ and returns plain data, nothing else.
 
 ## Status
 
-Audio analysis (tempo/beats/key/chords) is complete. Music theory is being
-built out toward full, teaching-tool-grade coverage:
+Audio analysis (tempo/beats/key/chords) and the full planned music theory
+layer are both complete:
 
 - Preprocessing (mono load + resample)
 - BPM detection
@@ -34,8 +34,10 @@ built out toward full, teaching-tool-grade coverage:
   onto piano keys with nothing instrument-specific to account for
 - Named non-diatonic scales: major/minor pentatonic, blues, harmonic minor,
   melodic minor (jazz/ascending form) — see `build_named_scale`
-
-Not yet built: a chord progression library.
+- Chord progression library: a catalog of well-known progressions (Pop,
+  '50s, jazz ii-V-I, 12-bar blues, Andalusian cadence, and more), realizable
+  in any key and matchable against a real detected chord sequence — see
+  `realize_progression`/`identify_progression`
 
 ## Usage
 
@@ -120,6 +122,32 @@ diatonic_triads(build_named_scale("A", "harmonic_minor"))
 
 sorted(NAMED_SCALE_INTERVALS)  # ['blues', 'harmonic_minor', 'major_pentatonic', 'melodic_minor', 'minor_pentatonic']
 ```
+
+### Chord progressions
+
+```python
+from chromalyze import NAMED_PROGRESSIONS, realize_progression, identify_progression
+
+# Realize a named progression in any key — same I-V-vi-IV shape, two keys:
+realize_progression(NAMED_PROGRESSIONS["pop"], "C")
+# [ProgressionChord(roman_numeral="I", root="C", quality="major", notes=["C","E","G"], ...),
+#  ProgressionChord(roman_numeral="V", root="G", ...), ("vi", "A", "minor"), ("IV", "F", "major")]
+realize_progression(NAMED_PROGRESSIONS["pop"], "G")   # G-D-Em-C — same shape, different key
+
+realize_progression(NAMED_PROGRESSIONS["andalusian_cadence"], "A")
+# i(Am) - VII(G) - VI(F) - V(E major) — the closing E is a borrowed/altered
+# dominant (with G#), not natural A minor's own (diatonic, minor-quality) v
+
+# Check whether a real chord sequence (e.g. from detect_chords) matches a
+# known progression, given the key it's in:
+identify_progression([("C", "major"), ("G", "major"), ("A", "minor"), ("F", "major")], key_tonic="C", key_mode="major")
+# ["pop"]
+```
+
+`NAMED_PROGRESSIONS` also includes `fifties`, `three_chord`, `jazz_ii_v_i`,
+`pachelbels_canon`, `authentic_cadence`, `plagal_cadence`,
+`deceptive_cadence`, `twelve_bar_blues`, `minor_three_chord`, and
+`minor_pop` — each with a `.description`.
 
 ### Intervals
 
