@@ -38,6 +38,9 @@ layer are both complete:
   '50s, jazz ii-V-I, 12-bar blues, Andalusian cadence, and more), realizable
   in any key and matchable against a real detected chord sequence — see
   `realize_progression`/`identify_progression`
+- CAGED system (standard 6-string guitar tuning only): the 5 moveable
+  C/A/G/E/D major-chord shapes for any root, and the 5 scale "box" patterns
+  built around them — see `caged_chord_shapes`/`caged_scale_boxes`
 
 ## Usage
 
@@ -190,6 +193,32 @@ Presets in `PRESET_TUNINGS`: `guitar_standard`, `guitar_drop_d`, `guitar_drop_c`
 `guitar_open_g`, `guitar_7string_standard`, `guitar_7string_drop_a`,
 `guitar_8string_standard`, `bass_standard`, `bass_drop_d`, `bass_half_step_down`,
 `bass_5string_standard`, `bass_5string_high_c`, `bass_6string_standard`.
+
+### CAGED (standard 6-string guitar tuning)
+
+```python
+from chromalyze import caged_chord_shapes, caged_scale_boxes, build_scale
+
+# The 5 moveable ways to play a C major chord, in canonical C-A-G-E-D
+# order — landing at the exact frets every guitarist learns them at:
+for voicing in caged_chord_shapes("C"):
+    print(voicing.shape, [(p.string_index, p.fret, p.role) for p in voicing.positions])
+# C  -> frets starting at 0 (the literal open C chord)
+# A  -> frets starting at 3  (the classic "A-shape barre" C at the 3rd fret)
+# G  -> frets starting at 5
+# E  -> frets starting at 8  (the classic "E-shape barre" C at the 8th fret)
+# D  -> frets starting at 10
+
+# The 5 CAGED scale-box patterns for a scale, same C-A-G-E-D order,
+# covering the full neck between them:
+scale = build_scale("C", "major")
+for box in caged_scale_boxes("C", scale.pitch_classes):
+    print(box.shape, box.min_fret, "-", box.max_fret, len(box.positions), "positions")
+```
+
+CAGED is specific to standard EADGBE tuning — the 5 shapes look different
+from each other specifically because of that tuning's string-interval
+pattern, so this doesn't extend to drop tunings, 7/8-string, or bass.
 
 ## Development
 

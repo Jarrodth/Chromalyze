@@ -1,5 +1,14 @@
 from .analyze import AnalysisResult, analyze
 from .beats import BeatResult, detect_beats
+from .caged import (
+    CAGED_ORDER,
+    CAGED_SHAPES,
+    CagedChordPosition,
+    CagedChordVoicing,
+    CagedScaleBox,
+    caged_chord_shapes,
+    caged_scale_boxes,
+)
 from .chords import ChordSegment, detect_chords
 from .instruments import FretPosition, PRESET_TUNINGS, Tuning, fretboard_positions
 from .intervals import Interval, common_interval_reference, interval_between, interval_from_semitones
@@ -71,4 +80,11 @@ __all__ = [
     "ProgressionChord",
     "realize_progression",
     "identify_progression",
+    "CAGED_ORDER",
+    "CAGED_SHAPES",
+    "CagedChordPosition",
+    "CagedChordVoicing",
+    "CagedScaleBox",
+    "caged_chord_shapes",
+    "caged_scale_boxes",
 ]
