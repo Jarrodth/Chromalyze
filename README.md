@@ -41,6 +41,8 @@ layer are both complete:
 - CAGED system (standard 6-string guitar tuning only): the 5 moveable
   C/A/G/E/D major-chord shapes for any root, and the 5 scale "box" patterns
   built around them — see `caged_chord_shapes`/`caged_scale_boxes`
+- Beats-per-measure estimation (a best-effort meter heuristic, not full
+  time-signature detection — see caveats below) — see `detect_beats_per_measure`
 
 ## Usage
 
@@ -57,6 +59,8 @@ result.key_confidence   # 0.27 — gap between best and 2nd-best key candidate;
                          # class), over ~0.15 is a clear, confident match
 result.chords           # [ChordSegment(start=0.0, end=1.53, chord="G", correlation=0.99), ...]
 result.scale            # Scale(tonic="C", mode="ionian", notes=["C","D","E","F","G","A","B"], pitch_classes=[0,2,4,5,7,9,11])
+result.beats_per_measure             # 4 — best-effort estimate, see "Beats-per-measure" caveats below
+result.beats_per_measure_confidence  # 0.0-ish means don't trust it; a clean, accented track scores much higher
 ```
 
 Individual stages are also available directly:
@@ -75,7 +79,28 @@ key = detect_key(y, sr)      # KeyResult(tonic="C", mode="major", key="C major",
 chords = detect_chords(y, sr, beat_times=beats.beat_times)
 # Or, standalone, without beat detection: fixed-length windows instead.
 chords = detect_chords(y, sr, segment_seconds=1.0)
+
+# Best-effort "how many beats per measure" estimate:
+from chromalyze import detect_beats_per_measure
+meter = detect_beats_per_measure(y, sr, beats.beat_times)  # TimeSignatureResult(beats_per_measure=4, confidence=1.2)
 ```
+
+**A real caveat on `detect_beats_per_measure`**: this is *not* full time-signature
+detection. True downbeat tracking (knowing which beat is "beat 1" of a
+measure) is a research-grade MIR problem state-of-the-art tools solve with
+trained neural nets (e.g. madmom's DBN-based downbeat tracker) — real extra
+weight and complexity this package doesn't take on. Instead, this is a
+simpler heuristic: downbeats are usually the most rhythmically accented
+beat in a measure (a kick drum on beat 1, for example), so it autocorrelates
+a per-beat loudness signal to find the periodicity (2, 3, or 4 beats) that
+best explains the accent pattern. Verified against synthesized click tracks
+with a known accent pattern before shipping — it reliably recovers the
+right answer on a clean, consistently-accented track, and reports near-zero
+confidence (rather than a false answer) when there's no real accent
+pattern to find. It will do noticeably worse on syncopated, sparsely
+percussive, or accent-ambiguous real music — always check `confidence`
+before trusting `beats_per_measure`, the same way you'd check
+`key_confidence` before trusting `key`.
 
 ### Music theory
 

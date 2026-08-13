@@ -37,3 +37,11 @@ def test_analyze_populates_chords(chord_progression_clip):
     assert result.chords is not None
     detected_chords = [s.chord for s in result.chords]
     assert detected_chords == expected_chords
+
+
+def test_analyze_populates_beats_per_measure(accented_click_track_4_4):
+    result = analyze(accented_click_track_4_4)
+
+    assert result.beats_per_measure == 4
+    assert result.beats_per_measure_confidence is not None
+    assert result.beats_per_measure_confidence > 0.5

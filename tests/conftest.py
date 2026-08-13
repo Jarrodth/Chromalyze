@@ -43,6 +43,55 @@ def click_track_90bpm(tmp_path):
     return path, 90.0
 
 
+def make_accented_click_track(
+    bpm: float, beats_per_measure: int, duration_seconds: float, sr: int, path: str, accent_ratio: float = 3.0
+) -> None:
+    """Like `make_click_track`, but every `beats_per_measure`-th click
+    (the "downbeat") is louder than the rest by `accent_ratio` — a real,
+    if simplistic, stand-in for a drum pattern's kick-on-beat-1 accent,
+    needed to test meter.py's beats-per-measure estimator against a known
+    ground truth.
+    """
+    total_samples = int(duration_seconds * sr)
+    audio = np.zeros(total_samples, dtype=np.float32)
+
+    click_interval_samples = int(60.0 / bpm * sr)
+    click_length = int(0.02 * sr)
+    decay = np.exp(-np.linspace(0, 12, click_length))
+    click_waveform = decay * np.sin(2 * np.pi * 1200 * np.arange(click_length) / sr)
+
+    position = 0
+    beat_index = 0
+    while position + click_length < total_samples:
+        amplitude = accent_ratio if beat_index % beats_per_measure == 0 else 1.0
+        audio[position : position + click_length] += amplitude * click_waveform
+        position += click_interval_samples
+        beat_index += 1
+
+    sf.write(path, audio, sr)
+
+
+@pytest.fixture
+def accented_click_track_4_4(tmp_path):
+    path = str(tmp_path / "accented_click_4_4.wav")
+    make_accented_click_track(bpm=120.0, beats_per_measure=4, duration_seconds=30.0, sr=22050, path=path)
+    return path
+
+
+@pytest.fixture
+def accented_click_track_3_4(tmp_path):
+    path = str(tmp_path / "accented_click_3_4.wav")
+    make_accented_click_track(bpm=120.0, beats_per_measure=3, duration_seconds=30.0, sr=22050, path=path)
+    return path
+
+
+@pytest.fixture
+def unaccented_click_track(tmp_path):
+    path = str(tmp_path / "unaccented_click.wav")
+    make_click_track(bpm=120.0, duration_seconds=30.0, sr=22050, path=path)
+    return path
+
+
 def note_freq(pitch_class: int, octave: int = 4) -> float:
     """Frequency in Hz for a pitch class (0=C .. 11=B) in the given octave,
     12-tone equal temperament, A4 = 440Hz."""

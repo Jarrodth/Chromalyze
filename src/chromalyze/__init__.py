@@ -13,6 +13,7 @@ from .chords import ChordSegment, detect_chords
 from .instruments import FretPosition, PRESET_TUNINGS, Tuning, fretboard_positions
 from .intervals import Interval, common_interval_reference, interval_between, interval_from_semitones
 from .key import KeyResult, detect_key
+from .meter import TimeSignatureResult, detect_beats_per_measure
 from .preprocessing import load_audio
 from .progressions import (
     NAMED_PROGRESSIONS,
@@ -87,4 +88,6 @@ __all__ = [
     "CagedScaleBox",
     "caged_chord_shapes",
     "caged_scale_boxes",
+    "TimeSignatureResult",
+    "detect_beats_per_measure",
 ]
