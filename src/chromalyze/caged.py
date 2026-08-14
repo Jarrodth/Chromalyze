@@ -24,6 +24,19 @@ from .theory import NOTE_NAME_TO_PITCH_CLASS
 # actual fret numbers shift.
 CAGED_ORDER = ["C", "A", "G", "E", "D"]
 
+# The conventional numbering for the 5 scale "box" positions specifically —
+# distinct from CAGED_ORDER above, which is the chord-shape sequence. This
+# is CAGED_ORDER rotated to start at E: widely-taught pentatonic/scale box
+# systems number "Position 1" as the E-shape-anchored box (e.g. A minor
+# pentatonic's famous "box 1" starts at fret 5, the E shape's position for
+# that root), then continue E-D-C-A-G. Fixing the shape identity to each
+# position number (rather than sorting boxes by ascending fret, which was
+# this module's original behavior) means "Position 1" always means the same
+# shape in every key — verified against a real reference site's own
+# position numbering for C major, which lands in this exact E-D-C-A-G
+# order.
+SCALE_POSITION_ORDER = ["E", "D", "C", "A", "G"]
+
 
 @dataclass
 class CagedShapeTemplate:
@@ -97,19 +110,29 @@ class CagedScaleBox:
     positions: list[FretPosition]
 
 
-def caged_scale_boxes(tonic: str, pitch_classes: list[int], padding: int = 2) -> list[CagedScaleBox]:
+def caged_scale_boxes(tonic: str, pitch_classes: list[int], padding: int = 1) -> list[CagedScaleBox]:
     """The 5 CAGED-labeled scale "box" patterns covering the neck for a
     scale (or any set of `pitch_classes`, e.g. `Scale.pitch_classes` from
     theory.py) in `tonic` — one box per shape, each centered on where that
-    shape's own chord tones fall, widened by `padding` frets on either
-    side to cover the fuller pattern guitarists actually play around each
-    shape. `padding=2` is a reasonable, commonly-taught box width, not a
-    single universal number — different teaching sources draw the exact
-    box boundaries slightly differently.
+    shape's own chord tones fall, widened by `padding` frets on either side
+    to cover the fuller pattern guitarists actually play around each shape.
+    Always returned in SCALE_POSITION_ORDER (E-D-C-A-G), not sorted by
+    fret, so "Position 1" names the same shape regardless of root — a
+    box's fret range can therefore land lower than an earlier-numbered
+    box's for some roots (e.g. for C, the A-shape and G-shape boxes sit
+    below the E-shape one), which is expected: position identity comes
+    from the shape, not from neck order.
+
+    `padding=1` (a 4-5 fret span depending on the shape's own natural
+    spread) verified to still cover all 6 strings for every scale type this
+    app offers (see tests) — narrower than an earlier padding=2 default,
+    matched to the ~5-fret, ~3-notes-per-string boxes real reference sites
+    use rather than the wider, denser boxes padding=2 produced.
     """
     root_pc = NOTE_NAME_TO_PITCH_CLASS[tonic]
     boxes = []
-    for shape_name, template in CAGED_SHAPES.items():
+    for shape_name in SCALE_POSITION_ORDER:
+        template = CAGED_SHAPES[shape_name]
         transpose = (root_pc - template.natural_root_pc) % 12
         shape_frets = [offset + transpose for offset in template.fret_offsets.values()]
         min_fret = max(0, min(shape_frets) - padding)
@@ -120,5 +143,4 @@ def caged_scale_boxes(tonic: str, pitch_classes: list[int], padding: int = 2) ->
             if min_fret <= p.fret <= max_fret
         ]
         boxes.append(CagedScaleBox(shape=shape_name, min_fret=min_fret, max_fret=max_fret, positions=positions))
-    boxes.sort(key=lambda b: b.min_fret)
     return boxes
