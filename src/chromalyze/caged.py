@@ -110,7 +110,9 @@ class CagedScaleBox:
     positions: list[FretPosition]
 
 
-def caged_scale_boxes(tonic: str, pitch_classes: list[int], padding: int = 1) -> list[CagedScaleBox]:
+def caged_scale_boxes(
+    tonic: str, pitch_classes: list[int], padding: int = 1, max_per_string: int = 3
+) -> list[CagedScaleBox]:
     """The 5 CAGED-labeled scale "box" patterns covering the neck for a
     scale (or any set of `pitch_classes`, e.g. `Scale.pitch_classes` from
     theory.py) in `tonic` — one box per shape, each centered on where that
@@ -126,8 +128,18 @@ def caged_scale_boxes(tonic: str, pitch_classes: list[int], padding: int = 1) ->
     `padding=1` (a 4-5 fret span depending on the shape's own natural
     spread) verified to still cover all 6 strings for every scale type this
     app offers (see tests) — narrower than an earlier padding=2 default,
-    matched to the ~5-fret, ~3-notes-per-string boxes real reference sites
-    use rather than the wider, denser boxes padding=2 produced.
+    matched to the ~5-fret boxes real reference sites use rather than the
+    wider, denser boxes padding=2 produced.
+
+    A fret-range window doesn't guarantee an even note count per string —
+    some strings can pick up one extra scale tone their neighbors don't,
+    which real CAGED scale-box charts never show (they cap at 3 notes per
+    string). `max_per_string` enforces that: when a string has more than
+    3, keeps the ones closest to that shape's own reference fret on that
+    string (its actual chord-tone fret from CAGED_SHAPES, or the shape's
+    lowest fret for a string the open chord doesn't use), breaking ties by
+    lower fret — verified this still leaves every string non-empty for
+    every scale type (see tests).
     """
     root_pc = NOTE_NAME_TO_PITCH_CLASS[tonic]
     boxes = []
@@ -137,10 +149,22 @@ def caged_scale_boxes(tonic: str, pitch_classes: list[int], padding: int = 1) ->
         shape_frets = [offset + transpose for offset in template.fret_offsets.values()]
         min_fret = max(0, min(shape_frets) - padding)
         max_fret = max(shape_frets) + padding
-        positions = [
+        all_positions = [
             p
             for p in fretboard_positions(pitch_classes, GUITAR_STANDARD, num_frets=max_fret)
             if min_fret <= p.fret <= max_fret
         ]
+
+        by_string: dict[int, list[FretPosition]] = {}
+        for p in all_positions:
+            by_string.setdefault(p.string_index, []).append(p)
+
+        positions = []
+        for string_index, string_positions in by_string.items():
+            offset = template.fret_offsets.get(string_index)
+            anchor_fret = offset + transpose if offset is not None else min(shape_frets)
+            string_positions.sort(key=lambda p: (abs(p.fret - anchor_fret), p.fret))
+            positions.extend(string_positions[:max_per_string])
+
         boxes.append(CagedScaleBox(shape=shape_name, min_fret=min_fret, max_fret=max_fret, positions=positions))
     return boxes

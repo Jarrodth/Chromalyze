@@ -107,3 +107,28 @@ def test_caged_scale_boxes_generalize_beyond_major():
         for box in boxes:
             strings_covered = {p.string_index for p in box.positions}
             assert strings_covered == set(range(6)), f"{scale.pitch_classes} {box.shape} box missing strings"
+
+
+def test_caged_scale_boxes_never_exceed_three_notes_per_string():
+    # Real CAGED scale-box charts cap at 3 notes per string — a plain
+    # fret-range window doesn't guarantee that (some strings can pick up
+    # an extra scale tone their neighbors don't), so this checks the cap
+    # actually holds across every scale type the app offers, not just one.
+    scales = [
+        build_scale("C", "major"),
+        build_scale("C", "minor"),
+        build_named_scale("C", "harmonic_minor"),
+        build_named_scale("C", "melodic_minor"),
+        build_named_scale("C", "major_pentatonic"),
+        build_named_scale("C", "minor_pentatonic"),
+        build_named_scale("C", "blues"),
+    ]
+    for scale in scales:
+        boxes = caged_scale_boxes("C", scale.pitch_classes)
+        for box in boxes:
+            by_string: dict[int, int] = {}
+            for p in box.positions:
+                by_string[p.string_index] = by_string.get(p.string_index, 0) + 1
+            assert by_string, f"{scale.pitch_classes} {box.shape} box has no positions at all"
+            assert max(by_string.values()) <= 3, f"{scale.pitch_classes} {box.shape} box has a string with >3 notes"
+            assert set(by_string) == set(range(6)), f"{scale.pitch_classes} {box.shape} box missing strings after capping"
