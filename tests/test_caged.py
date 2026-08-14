@@ -1,5 +1,6 @@
 from chromalyze.caged import CAGED_ORDER, CAGED_SHAPES, caged_chord_shapes, caged_scale_boxes
 from chromalyze.scales import build_named_scale
+from chromalyze.theory import build_scale
 
 
 def test_caged_shape_templates_match_real_open_chords():
@@ -58,3 +59,25 @@ def test_caged_scale_boxes_cover_five_shapes_in_order():
         assert all(box.min_fret <= p.fret <= box.max_fret for p in box.positions)
     # Boxes must be in ascending order up the neck.
     assert [b.min_fret for b in boxes] == sorted(b.min_fret for b in boxes)
+
+
+def test_caged_scale_boxes_generalize_beyond_major():
+    # The whole point of taking pitch_classes as a parameter (rather than
+    # being hardcoded to major, like the CAGED chord shapes are) is that
+    # every scale type the app offers must produce 5 real, playable boxes —
+    # not just the pentatonic case already covered above. A full 7-note
+    # scale is the densest realistic case, so every one of the 6 strings
+    # should have at least one note in every box (no gaps a guitarist would
+    # have to awkwardly skip over).
+    scales = [
+        build_scale("C", "major"),
+        build_scale("C", "minor"),
+        build_named_scale("C", "harmonic_minor"),
+        build_named_scale("C", "melodic_minor"),
+    ]
+    for scale in scales:
+        boxes = caged_scale_boxes("C", scale.pitch_classes)
+        assert [b.shape for b in boxes] == CAGED_ORDER
+        for box in boxes:
+            strings_covered = {p.string_index for p in box.positions}
+            assert strings_covered == set(range(6)), f"{scale.pitch_classes} {box.shape} box missing strings"
