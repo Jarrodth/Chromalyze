@@ -176,6 +176,26 @@ def build_chord(root: str, quality: str) -> Chord:
     return Chord(root=root, quality=quality, notes=notes, pitch_classes=pitch_classes)
 
 
+def build_power_chord(root: str) -> Chord:
+    """A power chord — just the root and its perfect fifth, no third, so
+    it's neither major nor minor (the whole reason guitarists reach for
+    it: it works interchangeably over either quality underneath).
+
+    Deliberately not just another CHORD_INTERVALS entry fed through
+    build_chord: that function's letter-spelling assumes tertian stacking
+    (each successive chord tone a third — 2 letters — above the last, so
+    it can build the whole notes list from `[i * 2 for i in range(...)]`).
+    A fifth is 4 letters above the root (C-D-E-F-G), not 2, so reusing
+    that logic here would misspell it (e.g. C's fifth as some form of E,
+    not G). letter_offsets=[0, 4] spells it correctly instead.
+    """
+    intervals = [0, 7]
+    root_pc = NOTE_NAME_TO_PITCH_CLASS[root]
+    pitch_classes = [(root_pc + i) % 12 for i in intervals]
+    notes = _spell_intervals(root, intervals, letter_offsets=[0, 4])
+    return Chord(root=root, quality="power", notes=notes, pitch_classes=pitch_classes)
+
+
 @dataclass
 class DiatonicChord:
     degree: int  # 1-7

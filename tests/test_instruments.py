@@ -8,8 +8,9 @@ from chromalyze.instruments import (
     Tuning,
     fretboard_positions,
     practical_chord_voicing,
+    practical_power_chord_voicing,
 )
-from chromalyze.theory import NOTE_NAME_TO_PITCH_CLASS, build_chord, build_scale
+from chromalyze.theory import NOTE_NAME_TO_PITCH_CLASS, build_chord, build_power_chord, build_scale
 
 
 def _shape_string(positions, string_count):
@@ -147,3 +148,58 @@ def test_practical_chord_voicing_on_bass_tuning():
     root_pc = NOTE_NAME_TO_PITCH_CLASS["A"]
     positions = practical_chord_voicing(chord.pitch_classes, root_pc, BASS_STANDARD)
     assert _shape_string(positions, 4) == "X022"
+
+
+def test_build_power_chord_is_correctly_spelled_root_and_fifth():
+    # A power chord is neither major nor minor — just the root and its
+    # perfect fifth. Real letter spelling matters here too: the fifth is
+    # 4 letters above the root (C-D-E-F-G), not the 2-letter tertian jump
+    # build_chord uses for triads, so this checks it lands on the right
+    # letter, not just the right pitch class.
+    cases = {"C": ("C", "G"), "D": ("D", "A"), "F": ("F", "C"), "F#": ("F#", "C#"), "Bb": ("Bb", "F")}
+    for root, expected_notes in cases.items():
+        chord = build_power_chord(root)
+        assert chord.quality == "power"
+        assert tuple(chord.notes) == expected_notes
+        root_pc = NOTE_NAME_TO_PITCH_CLASS[root]
+        assert chord.pitch_classes == [root_pc, (root_pc + 7) % 12]
+
+
+def test_practical_power_chord_voicing_matches_real_canonical_shapes():
+    # The exact shapes every guitarist already knows by heart — including
+    # the G-string special case: standard tuning's G-to-B gap is a major
+    # 3rd instead of the usual perfect 4th, so a power chord rooted on the
+    # G string needs +3 frets on the B string, not +2 like every other
+    # adjacent-string pair.
+    expected = {
+        "E": (0, 0, 1, 2),  # open E5: low E open, A string 2nd fret
+        "A": (1, 0, 2, 2),  # open A5: A open, D string 2nd fret
+        "D": (2, 0, 3, 2),  # open D5: D open, G string 2nd fret
+        "G": (3, 0, 4, 3),  # G5: G open, B string 3rd fret (the +3 case)
+        "B": (4, 0, 5, 2),  # B5: B open, high E string 2nd fret
+        "C": (4, 1, 5, 3),  # movable C5: B string 1st fret, high E 3rd fret
+        "F": (0, 1, 1, 3),  # movable F5: low E 1st fret, A string 3rd fret
+    }
+    for root, (root_string, root_fret, fifth_string, fifth_fret) in expected.items():
+        root_pc = NOTE_NAME_TO_PITCH_CLASS[root]
+        positions = practical_power_chord_voicing(root_pc, GUITAR_STANDARD)
+        assert len(positions) == 2
+        by_string = {p.string_index: p.fret for p in positions}
+        assert by_string == {root_string: root_fret, fifth_string: fifth_fret}, root
+
+
+def test_practical_power_chord_voicing_only_ever_two_notes():
+    # Real power chords mute everything except root and fifth — unlike
+    # practical_chord_voicing's full-hand-span approach (right for real
+    # triads, wrong here), this should never ring more than 2 strings.
+    for root in ["C", "D", "E", "F", "G", "A", "B", "F#", "Bb", "Eb"]:
+        root_pc = NOTE_NAME_TO_PITCH_CLASS[root]
+        positions = practical_power_chord_voicing(root_pc, GUITAR_STANDARD)
+        assert len(positions) == 2
+        pitch_classes = {p.pitch_class for p in positions}
+        assert pitch_classes == {root_pc, (root_pc + 7) % 12}
+        # The two notes must be on adjacent strings, root on the lower one.
+        strings = sorted(p.string_index for p in positions)
+        assert strings[1] == strings[0] + 1
+        root_position = next(p for p in positions if p.pitch_class == root_pc)
+        assert root_position.string_index == strings[0]

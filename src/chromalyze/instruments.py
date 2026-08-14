@@ -194,3 +194,48 @@ def practical_chord_voicing(
         return positions
 
     return None
+
+
+def practical_power_chord_voicing(
+    root_pitch_class: int, tuning: Tuning, num_frets: int = DEFAULT_NUM_FRETS
+) -> list[FretPosition] | None:
+    """The classic 2-string power chord shape — root and its perfect
+    fifth on two adjacent strings, at whatever's the lowest fret position
+    where that works. Deliberately minimal (just those 2 notes, everything
+    else muted) rather than practical_chord_voicing's full-hand-span
+    approach, which is right for real triads but not for how power chords
+    are actually played — real players mute everything except root and
+    fifth, they don't ring out every reachable string.
+
+    The fret offset between the two strings isn't always 2 — standard
+    tuning's G-to-B gap is a major 3rd instead of the usual perfect 4th,
+    so a power chord rooted on the G string needs +3 frets on the B
+    string, not +2 (real, well-known guitar lore, verified here against
+    the tuning's actual string intervals rather than hardcoded, so it's
+    correct for any tuning, not just standard).
+
+    Returns None if no string pair can fit within num_frets — shouldn't
+    happen for any preset tuning, but stays honest rather than forcing a
+    bad answer.
+    """
+    open_pcs = tuning.open_string_pitch_classes
+    best = None
+    for string_index in range(len(open_pcs) - 1):
+        fret_root = (root_pitch_class - open_pcs[string_index]) % 12
+        gap = (open_pcs[string_index + 1] - open_pcs[string_index]) % 12
+        fret_fifth = fret_root + (7 - gap) % 12
+        if fret_fifth > num_frets:
+            continue
+        if best is None or fret_root < best[0]:
+            best = (fret_root, string_index, fret_fifth)
+
+    if best is None:
+        return None
+
+    fret_root, string_index, fret_fifth = best
+    return [
+        FretPosition(string_index=string_index, fret=fret_root, pitch_class=root_pitch_class, scale_degree=1),
+        FretPosition(
+            string_index=string_index + 1, fret=fret_fifth, pitch_class=(root_pitch_class + 7) % 12, scale_degree=2
+        ),
+    ]

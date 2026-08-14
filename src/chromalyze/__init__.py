@@ -10,7 +10,14 @@ from .caged import (
     caged_scale_boxes,
 )
 from .chords import ChordSegment, detect_chords
-from .instruments import FretPosition, PRESET_TUNINGS, Tuning, fretboard_positions, practical_chord_voicing
+from .instruments import (
+    FretPosition,
+    PRESET_TUNINGS,
+    Tuning,
+    fretboard_positions,
+    practical_chord_voicing,
+    practical_power_chord_voicing,
+)
 from .intervals import Interval, common_interval_reference, interval_between, interval_from_semitones
 from .key import KeyResult, detect_key
 from .meter import TimeSignatureResult, detect_beats_per_measure
@@ -34,6 +41,7 @@ from .theory import (
     Scale,
     analyze_chord_function,
     build_chord,
+    build_power_chord,
     build_scale,
     diatonic_sevenths,
     diatonic_triads,
@@ -59,6 +67,7 @@ __all__ = [
     "diatonic_sevenths",
     "DiatonicSeventhChord",
     "build_chord",
+    "build_power_chord",
     "Chord",
     "CHORD_INTERVALS",
     "analyze_chord_function",
@@ -70,6 +79,7 @@ __all__ = [
     "fretboard_positions",
     "FretPosition",
     "practical_chord_voicing",
+    "practical_power_chord_voicing",
     "Interval",
     "interval_between",
     "interval_from_semitones",
