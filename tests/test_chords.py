@@ -1,6 +1,7 @@
 from chromalyze.beats import detect_beats
-from chromalyze.chords import detect_chords
+from chromalyze.chords import detect_chords, detect_chords_from_stems
 from chromalyze.preprocessing import load_audio
+from chromalyze.stems import combine_stems
 
 
 def test_detect_chords_progression(chord_progression_clip):
@@ -89,3 +90,42 @@ def test_detect_chords_on_silence_returns_no_confident_chord(tmp_path):
     # like a confident real match.
     for seg in segments:
         assert seg.correlation == float("-inf")
+        assert seg.confidence == 0.0
+
+
+def test_detect_chords_confidence_is_positive_for_clean_triads(chord_progression_clip):
+    path, _, _ = chord_progression_clip
+    y, sr = load_audio(path)
+    segments = detect_chords(y, sr, segment_seconds=0.5)
+
+    # A clean, unambiguous triad should beat every other root/quality
+    # candidate by a clear margin, not just the winner alone scoring well.
+    for seg in segments:
+        assert seg.confidence > 0.1
+
+
+def test_isolated_single_beat_chord_guess_is_smoothed_using_context(rhythmic_clip_with_single_beat_blip):
+    path, expected_chord = rhythmic_clip_with_single_beat_blip
+    y, sr = load_audio(path)
+    beats = detect_beats(y, sr)
+
+    segments = detect_chords(y, sr, beat_times=beats.beat_times)
+
+    # The lone stray beat should be corrected to match the chord on both
+    # sides of it, collapsing the whole clip back into one segment instead
+    # of surfacing a spurious one-beat blip in the middle.
+    assert [s.chord for s in segments] == [expected_chord]
+
+
+def test_detect_chords_from_stems_excludes_drum_contamination(contaminated_stems_clip):
+    stems, sr, expected_chord = contaminated_stems_clip
+
+    clean_segments = detect_chords_from_stems(stems, sr, segment_seconds=1.0)
+    assert all(s.chord == expected_chord for s in clean_segments)
+
+    # Same signal, but recombined with drums left in at full strength (the
+    # naive full-mix approach) — proves the drum exclusion is actually
+    # doing something, not just that the new code path runs.
+    naive_mix = combine_stems(stems, drum_attenuation=1.0)
+    contaminated_segments = detect_chords(naive_mix, sr, segment_seconds=1.0)
+    assert any(s.chord != expected_chord for s in contaminated_segments)

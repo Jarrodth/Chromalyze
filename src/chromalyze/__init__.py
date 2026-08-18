@@ -9,7 +9,7 @@ from .caged import (
     caged_chord_shapes,
     caged_scale_boxes,
 )
-from .chords import ChordSegment, detect_chords
+from .chords import ChordSegment, detect_chords, detect_chords_from_stems
 from .instruments import (
     FretPosition,
     PRESET_TUNINGS,
@@ -31,6 +31,7 @@ from .progressions import (
     realize_progression,
 )
 from .scales import NAMED_SCALE_INTERVALS, build_named_scale
+from .stems import DRUM_STEM_NAMES, combine_stems
 from .tempo import detect_bpm
 from .theory import (
     CHORD_INTERVALS,
@@ -55,7 +56,10 @@ __all__ = [
     "detect_beats",
     "BeatResult",
     "detect_chords",
+    "detect_chords_from_stems",
     "ChordSegment",
+    "combine_stems",
+    "DRUM_STEM_NAMES",
     "detect_key",
     "KeyResult",
     "load_audio",

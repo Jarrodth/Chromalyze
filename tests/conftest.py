@@ -265,3 +265,98 @@ def rhythmic_chord_progression_clip(tmp_path):
     make_rhythmic_chord_progression_clip(chords, bpm=120.0, beats_per_chord=3, sr=22050, path=path)
     expected_boundaries = [0.0, 1.5, 3.0, 4.5, 6.0]
     return path, ["G", "Em", "C", "D"], expected_boundaries
+
+
+def make_rhythmic_clip_with_blip(
+    chord: tuple[int, str],
+    blip_chord: tuple[int, str],
+    bpm: float,
+    beats_before: int,
+    blip_beats: int,
+    beats_after: int,
+    sr: int,
+    path: str,
+) -> None:
+    """Like make_rhythmic_chord_progression_clip, but strums `chord` for
+    `beats_before` beats, briefly switches to `blip_chord` for just
+    `blip_beats` beats (a stand-in for a passing tone or a stray overtone
+    getting misread as its own chord), then returns to `chord` for
+    `beats_after` more beats — real onset content with a real, isolated,
+    single-window misread in the middle, needed to test that detect_chords'
+    minimum-duration smoothing pass corrects it back using the matching
+    chord on both sides, instead of reporting a spurious short blip.
+    """
+    beat_interval_samples = int(60.0 / bpm * sr)
+    strum_samples = int(0.25 * sr)
+    decay = np.exp(-np.linspace(0, 4, strum_samples))
+    t = np.arange(strum_samples) / sr
+
+    def strum_for(root_pc: int, quality: str) -> np.ndarray:
+        intervals = [0, 4, 7] if quality == "major" else [0, 3, 7]
+        strum = np.zeros(strum_samples, dtype=np.float32)
+        for interval in intervals:
+            pc = (root_pc + interval) % 12
+            freq = note_freq(pc, octave=3)
+            strum += (decay * np.sin(2 * np.pi * freq * t)).astype(np.float32)
+        strum /= len(intervals)
+        pad = np.zeros(max(0, beat_interval_samples - strum_samples), dtype=np.float32)
+        return np.concatenate([strum, pad])
+
+    segments = (
+        [strum_for(*chord) for _ in range(beats_before)]
+        + [strum_for(*blip_chord) for _ in range(blip_beats)]
+        + [strum_for(*chord) for _ in range(beats_after)]
+    )
+    audio = np.concatenate(segments)
+    sf.write(path, audio, sr)
+
+
+@pytest.fixture
+def rhythmic_clip_with_single_beat_blip(tmp_path):
+    path = str(tmp_path / "rhythmic_blip.wav")
+    # C major held for 6 beats, one stray G major beat, then C major for 6
+    # more beats at 120bpm — the only chord that should ever be reported is
+    # C, once beat-synchronous smoothing corrects the lone G beat.
+    make_rhythmic_clip_with_blip(
+        chord=(0, "major"),
+        blip_chord=(7, "major"),
+        bpm=120.0,
+        beats_before=6,
+        blip_beats=1,
+        beats_after=6,
+        sr=22050,
+        path=path,
+    )
+    return path, "C"
+
+
+@pytest.fixture
+def contaminated_stems_clip():
+    """Two raw stem waveforms (no file I/O needed — detect_chords_from_stems
+    takes arrays directly, same as detect_chords): a quiet, clean C major
+    triad standing in for the harmony-carrying stems (vocals/bass/other),
+    and a much louder F# major triad standing in for a drum stem. F# major
+    (F#/A#/C#) is pitch-class-disjoint from C major (C/E/G), so a naive
+    full-mix sum reliably gets pulled toward the wrong chord if the loud
+    "drums" stem isn't excluded — real, direct evidence that recombining
+    stems with drums removed actually changes the detected chord, not just
+    that the plumbing runs without error.
+    """
+    sr = 22050
+    duration_seconds = 2.0
+    samples = int(duration_seconds * sr)
+    t = np.arange(samples) / sr
+
+    def triad_wave(root_pc: int, amplitude: float) -> np.ndarray:
+        wave = np.zeros(samples, dtype=np.float32)
+        for interval in (0, 4, 7):
+            pc = (root_pc + interval) % 12
+            freq = note_freq(pc, octave=3)
+            wave += np.sin(2 * np.pi * freq * t).astype(np.float32)
+        return (amplitude * wave / 3).astype(np.float32)
+
+    harmony = triad_wave(root_pc=0, amplitude=1.0)  # C major
+    drums = triad_wave(root_pc=6, amplitude=6.0)  # F# major, much louder
+
+    stems = {"vocals": harmony, "drums": drums}
+    return stems, sr, "C"

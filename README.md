@@ -18,7 +18,13 @@ layer are both complete:
 - Beat tracking
 - Key detection (Krumhansl-Schmuckler profile correlation over Librosa chroma)
 - Chord recognition (chroma template matching, segmented on real detected
-  beats rather than arbitrary fixed-time windows — see `detect_chords`)
+  beats rather than arbitrary fixed-time windows, with a per-chord
+  confidence score and a smoothing pass that corrects isolated
+  single-beat misreads using their surrounding context — see
+  `detect_chords`), plus a stem-aware variant that recombines separated
+  stems with drums excluded before running detection, to avoid feeding
+  a loud drum kit into the same chroma vector as the actual harmony —
+  see `detect_chords_from_stems`/`combine_stems`
 - Music theory layer: scale spelling (proper key-signature-aware letter
   spelling, not a fixed chromatic lookup), diatonic triads *and* seventh
   chords with roman numerals for any of the 7 modes, arbitrary chord
@@ -57,7 +63,7 @@ result.key_confidence   # 0.27 — gap between best and 2nd-best key candidate;
                          # under ~0.05 usually means genuine relative
                          # major/minor ambiguity (they share every pitch
                          # class), over ~0.15 is a clear, confident match
-result.chords           # [ChordSegment(start=0.0, end=1.53, chord="G", correlation=0.99), ...]
+result.chords           # [ChordSegment(start=0.0, end=1.53, chord="G", correlation=0.99, confidence=0.42), ...]
 result.scale            # Scale(tonic="C", mode="ionian", notes=["C","D","E","F","G","A","B"], pitch_classes=[0,2,4,5,7,9,11])
 result.beats_per_measure             # 4 — best-effort estimate, see "Beats-per-measure" caveats below
 result.beats_per_measure_confidence  # 0.0-ish means don't trust it; a clean, accented track scores much higher
@@ -75,10 +81,24 @@ key = detect_key(y, sr)      # KeyResult(tonic="C", mode="major", key="C major",
 
 # Beat-synchronous segmentation (recommended — see analyze() above) avoids
 # analyzing a window that straddles two different chords, which can
-# produce a spurious chord that was never actually played:
+# produce a spurious chord that was never actually played. Chroma is
+# averaged across all frames within each beat-to-beat window (not taken
+# per-frame), an isolated single-beat misread flanked by two segments that
+# agree with each other gets corrected to match them, and each returned
+# segment carries a confidence score (gap between the best and second-best
+# candidate — same convention as KeyResult.confidence above):
 chords = detect_chords(y, sr, beat_times=beats.beat_times)
 # Or, standalone, without beat detection: fixed-length windows instead.
 chords = detect_chords(y, sr, segment_seconds=1.0)
+
+# Given separated stems (e.g. Demucs output), recombine them with drums
+# removed before detecting chords — a loud drum kit is a common source of
+# chroma contamination that pulls detection away from the actual harmony:
+from chromalyze import detect_chords_from_stems
+stems = {"vocals": vocals_y, "drums": drums_y, "bass": bass_y, "other": other_y}
+chords = detect_chords_from_stems(stems, sr, beat_times=beats.beat_times)
+# drum_attenuation=0.0 (the default) removes drums entirely; raise it
+# (e.g. 0.15) to heavily attenuate rather than fully zero them out.
 
 # Best-effort "how many beats per measure" estimate:
 from chromalyze import detect_beats_per_measure
