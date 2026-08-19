@@ -1,4 +1,11 @@
-from chromalyze.progressions import NAMED_PROGRESSIONS, identify_progression, realize_progression
+from chromalyze.chords import ChordSegment
+from chromalyze.progressions import (
+    NAMED_PROGRESSIONS,
+    best_progression_match,
+    clean_chords_with_progression,
+    identify_progression,
+    realize_progression,
+)
 
 
 def test_realize_pop_progression_in_c_major():
@@ -85,3 +92,124 @@ def test_every_named_progression_realizes_without_error():
         assert len(chords) == len(progression.steps), name
         for chord in chords:
             assert chord.notes, name
+
+
+def test_best_progression_match_finds_pop_progression_looped():
+    # Pop progression (I-V-vi-IV) played twice in a row in C major.
+    chords = [("C", "major"), ("G", "major"), ("A", "minor"), ("F", "major")] * 2
+    match = best_progression_match(chords, key_tonic="C", key_mode="major")
+    assert match is not None
+    assert match.name == "pop"
+    assert match.phase == 0
+    assert match.match_ratio == 1.0
+
+
+def test_best_progression_match_finds_the_right_starting_phase():
+    # Same loop, but the real sequence starts mid-loop, on the V chord.
+    chords = [("G", "major"), ("A", "minor"), ("F", "major"), ("C", "major")] * 2
+    match = best_progression_match(chords, key_tonic="C", key_mode="major")
+    assert match is not None
+    assert match.name == "pop"
+    assert match.phase == 1
+
+
+def test_best_progression_match_tolerates_a_few_real_misreads():
+    chords = [("C", "major"), ("G", "major"), ("A", "minor"), ("F", "major")] * 3
+    # Corrupt one entry, as a stand-in for a real chroma misread — the
+    # overall loop should still be recognizable.
+    chords[5] = ("Db", "minor")
+    match = best_progression_match(chords, key_tonic="C", key_mode="major")
+    assert match is not None
+    assert match.name == "pop"
+
+
+def test_best_progression_match_returns_none_for_unstructured_chords():
+    chords = [("C", "major"), ("Db", "major"), ("F#", "minor"), ("B", "major")]
+    assert best_progression_match(chords, key_tonic="C", key_mode="major") is None
+
+
+def test_best_progression_match_returns_none_for_empty_input():
+    assert best_progression_match([], key_tonic="C", key_mode="major") is None
+
+
+def _segment(start, end, chord, confidence):
+    return ChordSegment(start=start, end=end, chord=chord, correlation=0.9, confidence=confidence)
+
+
+def test_clean_chords_with_progression_corrects_a_low_confidence_outlier():
+    # Pop progression (C-G-Am-F) played twice, but the 7th segment (should
+    # be Am) was misdetected as a low-confidence Ab.
+    segments = [
+        _segment(0.0, 1.0, "C", 0.5),
+        _segment(1.0, 2.0, "G", 0.5),
+        _segment(2.0, 3.0, "Am", 0.5),
+        _segment(3.0, 4.0, "F", 0.5),
+        _segment(4.0, 5.0, "C", 0.5),
+        _segment(5.0, 6.0, "G", 0.5),
+        _segment(6.0, 7.0, "Ab", 0.01),  # low confidence, doesn't fit the loop
+        _segment(7.0, 8.0, "F", 0.5),
+    ]
+
+    result = clean_chords_with_progression(segments, key_tonic="C", key_mode="major")
+
+    assert result.match is not None
+    assert result.match.name == "pop"
+    corrected = [s for s in result.chords if s.progression_corrected]
+    assert len(corrected) == 1
+    assert corrected[0].chord == "Am"
+    assert corrected[0].start == 6.0 and corrected[0].end == 7.0
+
+
+def test_clean_chords_with_progression_leaves_confident_deviations_alone():
+    segments = [
+        _segment(0.0, 1.0, "C", 0.5),
+        _segment(1.0, 2.0, "G", 0.5),
+        _segment(2.0, 3.0, "Am", 0.5),
+        _segment(3.0, 4.0, "F", 0.5),
+        _segment(4.0, 5.0, "C", 0.5),
+        _segment(5.0, 6.0, "G", 0.5),
+        _segment(6.0, 7.0, "Ab", 0.4),  # confident — treated as a genuine deviation, not corrected
+        _segment(7.0, 8.0, "F", 0.5),
+    ]
+
+    result = clean_chords_with_progression(segments, key_tonic="C", key_mode="major")
+
+    assert all(not s.progression_corrected for s in result.chords)
+    assert [s.chord for s in result.chords] == ["C", "G", "Am", "F", "C", "G", "Ab", "F"]
+
+
+def test_clean_chords_with_progression_merges_a_corrected_segment_into_its_neighbors():
+    # The 12-bar blues' first four bars are all the same chord (I7,
+    # collapsed to a plain "C" triad label) — a real detector splitting
+    # that stretch into several small windows, with one of them misread,
+    # is exactly the "buggy jumpy chord display" case this is meant to fix.
+    labels = ["C", "C", "Db", "C", "F", "F", "C", "C", "G", "F", "C", "G"]
+    segments = [
+        _segment(float(i), float(i + 1), label, 0.01 if label == "Db" else 0.5) for i, label in enumerate(labels)
+    ]
+
+    result = clean_chords_with_progression(segments, key_tonic="C", key_mode="major")
+
+    assert result.match is not None
+    assert result.match.name == "twelve_bar_blues"
+    assert result.chords[0].chord == "C"
+    assert result.chords[0].start == 0.0
+    assert result.chords[0].end == 4.0
+    assert result.chords[0].progression_corrected is True
+
+
+def test_clean_chords_with_progression_returns_none_match_when_nothing_fits():
+    segments = [
+        _segment(0.0, 1.0, "C", 0.9),
+        _segment(1.0, 2.0, "Db", 0.9),
+        _segment(2.0, 3.0, "F#m", 0.9),
+    ]
+    result = clean_chords_with_progression(segments, key_tonic="C", key_mode="major")
+    assert result.match is None
+    assert result.chords == segments
+
+
+def test_clean_chords_with_progression_handles_empty_input():
+    result = clean_chords_with_progression([], key_tonic="C", key_mode="major")
+    assert result.chords == []
+    assert result.match is None

@@ -14,7 +14,9 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 
+from .chords import ChordSegment, _merge_adjacent, parse_chord_label
 from .theory import (
+    NOTE_NAME_TO_PITCH_CLASS,
     _CHORD_QUALITY_NUMERAL_DECORATION,
     _roman_numeral_for_interval,
     _root_name_for_interval,
@@ -173,3 +175,162 @@ def identify_progression(chords: list[tuple[str, str]], key_tonic: str, key_mode
         if numerals == expected:
             matches.append(name)
     return matches
+
+
+# Only major/minor triad qualities can ever come out of detect_chords (see
+# chords.py — real audio chord detection there is triad-only), so a
+# progression step's own quality (which can be a seventh chord, e.g.
+# NAMED_PROGRESSIONS["jazz_ii_v_i"]'s "minor7"/"dominant7"/"major7") has to
+# collapse down to whichever triad it's built on before it can ever become
+# a corrected ChordSegment's label.
+_TRIAD_QUALITY_FOR_STEP = {
+    "major": "major",
+    "minor": "minor",
+    "major7": "major",
+    "minor7": "minor",
+    "dominant7": "major",
+}
+
+_MIN_PROGRESSION_MATCH_RATIO = 0.5  # below this, nothing in the catalog explains the sequence well enough to trust
+DEFAULT_CONFIDENCE_THRESHOLD = 0.05  # same "genuine ambiguity" cutoff as ChordSegment.confidence's own convention
+
+
+def _triad_label(root: str, quality: str) -> str:
+    triad_quality = _TRIAD_QUALITY_FOR_STEP.get(quality, "major")
+    return root if triad_quality == "major" else f"{root}m"
+
+
+def _tiled_expected_steps(progression: NamedProgression, phase: int, length: int) -> list[ProgressionStep]:
+    steps = progression.steps
+    return [steps[(phase + i) % len(steps)] for i in range(length)]
+
+
+@dataclass
+class ProgressionMatch:
+    name: str  # a NAMED_PROGRESSIONS key
+    phase: int  # which step of the progression's own cycle the sequence starts on
+    match_ratio: float  # fraction of positions where the tiled progression already agrees with the real sequence
+
+
+def best_progression_match(chords: list[tuple[str, str]], key_tonic: str, key_mode: str) -> ProgressionMatch | None:
+    """Find the catalog progression that best explains a real, possibly
+    noisy chord sequence — a fuzzier cousin of `identify_progression`'s
+    exact-match check.
+
+    A real song usually loops a short progression many times over its
+    full length (and might start recording mid-loop), so each candidate
+    is tiled cyclically to the sequence's length at every possible
+    starting phase, and scored by what fraction of positions agree — the
+    best (progression, phase) pair overall wins, even when a few
+    positions disagree (real misreads, or a genuine one-off deviation
+    like a bridge or a passing chord) rather than the loop itself
+    changing.
+
+    Matching compares each position's (root interval above the tonic,
+    triad quality) rather than a fully-decorated roman numeral string —
+    `detect_chords` only ever produces plain major/minor triads (see
+    chords.py), so a catalog progression built from seventh chords (e.g.
+    "twelve_bar_blues") would otherwise never match anything: "V7" and
+    "V" are different strings even though a real dominant-seventh chord
+    and its detected triad share the same root and are both "major"
+    underneath (see _TRIAD_QUALITY_FOR_STEP). `key_mode` only limits the
+    search to progressions written for that mode (e.g. a minor-key song
+    is never explained by a major-mode catalog entry, even if the raw
+    interval/quality pairs happen to line up) — it doesn't otherwise
+    affect scoring, since interval and triad quality are mode-independent
+    facts about each chord.
+
+    Returns None if `chords` is empty, or if even the best match agrees
+    with fewer than half the sequence — too weak a fit to be worth using
+    to correct anything.
+    """
+    if not chords:
+        return None
+
+    key_tonic_pc = NOTE_NAME_TO_PITCH_CLASS[key_tonic]
+    actual = [((NOTE_NAME_TO_PITCH_CLASS[root] - key_tonic_pc) % 12, quality) for root, quality in chords]
+
+    best: ProgressionMatch | None = None
+    for name, progression in NAMED_PROGRESSIONS.items():
+        if progression.mode != key_mode:
+            continue
+        for phase in range(len(progression.steps)):
+            tiled_steps = _tiled_expected_steps(progression, phase, len(actual))
+            match_ratio = sum(
+                1
+                for (interval, quality), step in zip(actual, tiled_steps)
+                if interval == step.interval and quality == _TRIAD_QUALITY_FOR_STEP.get(step.quality)
+            ) / len(actual)
+            if best is None or match_ratio > best.match_ratio:
+                best = ProgressionMatch(name=name, phase=phase, match_ratio=match_ratio)
+
+    if best is not None and best.match_ratio < _MIN_PROGRESSION_MATCH_RATIO:
+        return None
+    return best
+
+
+@dataclass
+class ProgressionCleanupResult:
+    chords: list[ChordSegment]
+    match: ProgressionMatch | None  # None if nothing in the catalog explained the sequence well enough to correct anything
+
+
+def clean_chords_with_progression(
+    chords: list[ChordSegment],
+    key_tonic: str,
+    key_mode: str,
+    confidence_threshold: float = DEFAULT_CONFIDENCE_THRESHOLD,
+) -> ProgressionCleanupResult:
+    """Correct low-confidence chord guesses using the closest-matching
+    catalog progression, instead of displaying every shaky raw reading at
+    face value.
+
+    Finds the best progression match for the *entire* sequence (see
+    `best_progression_match`), then walks it again and overwrites only the
+    segments whose confidence is at or below `confidence_threshold` *and*
+    whose chord disagrees with what the matched progression expects at
+    that position. A segment the detector was already confident about is
+    left alone even if it doesn't fit the pattern — real songs do
+    genuinely deviate from a textbook progression sometimes (a bridge, a
+    passing chord, a key change), and a confident real reading shouldn't
+    be overruled by a generic template just because it's unusual.
+
+    A corrected segment keeps its original `correlation`/`confidence` —
+    those still honestly describe how ambiguous the audio itself was —
+    with only `chord` changed and `progression_corrected` set, so a
+    caller can tell it apart from a directly-detected one. Adjacent
+    segments that end up sharing a chord after correction are merged back
+    together, same as `detect_chords` does for its own raw output.
+    """
+    if len(chords) < 3:
+        return ProgressionCleanupResult(chords=chords, match=None)
+
+    root_quality_pairs = [parse_chord_label(seg.chord) for seg in chords]
+    match = best_progression_match(root_quality_pairs, key_tonic, key_mode)
+    if match is None:
+        return ProgressionCleanupResult(chords=chords, match=None)
+
+    progression = NAMED_PROGRESSIONS[match.name]
+    realized = realize_progression(progression, key_tonic)
+    expected_labels = [
+        _triad_label(realized[(match.phase + i) % len(realized)].root, realized[(match.phase + i) % len(realized)].quality)
+        for i in range(len(chords))
+    ]
+
+    cleaned = []
+    for seg, expected_label in zip(chords, expected_labels):
+        if seg.confidence <= confidence_threshold and seg.chord != expected_label:
+            cleaned.append(
+                ChordSegment(
+                    start=seg.start,
+                    end=seg.end,
+                    chord=expected_label,
+                    correlation=seg.correlation,
+                    confidence=seg.confidence,
+                    progression_corrected=True,
+                )
+            )
+        else:
+            cleaned.append(seg)
+
+    return ProgressionCleanupResult(chords=_merge_adjacent(cleaned), match=match)

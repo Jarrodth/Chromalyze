@@ -9,7 +9,7 @@ from .caged import (
     caged_chord_shapes,
     caged_scale_boxes,
 )
-from .chords import ChordSegment, detect_chords, detect_chords_from_stems
+from .chords import ChordSegment, detect_chords, detect_chords_from_stems, parse_chord_label
 from .instruments import (
     FretPosition,
     PRESET_TUNINGS,
@@ -26,7 +26,11 @@ from .progressions import (
     NAMED_PROGRESSIONS,
     NamedProgression,
     ProgressionChord,
+    ProgressionCleanupResult,
+    ProgressionMatch,
     ProgressionStep,
+    best_progression_match,
+    clean_chords_with_progression,
     identify_progression,
     realize_progression,
 )
@@ -58,6 +62,7 @@ __all__ = [
     "detect_chords",
     "detect_chords_from_stems",
     "ChordSegment",
+    "parse_chord_label",
     "combine_stems",
     "DRUM_STEM_NAMES",
     "detect_key",
@@ -94,8 +99,12 @@ __all__ = [
     "NamedProgression",
     "ProgressionStep",
     "ProgressionChord",
+    "ProgressionMatch",
+    "ProgressionCleanupResult",
     "realize_progression",
     "identify_progression",
+    "best_progression_match",
+    "clean_chords_with_progression",
     "CAGED_ORDER",
     "CAGED_SHAPES",
     "CagedChordPosition",

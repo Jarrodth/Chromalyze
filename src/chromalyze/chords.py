@@ -35,11 +35,24 @@ class ChordSegment:
     chord: str  # e.g. "C", "Am"
     correlation: float  # best-match correlation score for this segment
     confidence: float  # gap between the best and second-best candidate — same convention as KeyResult.confidence in key.py
+    progression_corrected: bool = False  # True if progressions.clean_chords_with_progression overrode this segment's chord
 
 
 def _chord_name(root_pc: int, quality: str) -> str:
     root_name = MAJOR_TONIC_NAMES[root_pc]
     return root_name if quality == "major" else f"{root_name}m"
+
+
+def parse_chord_label(label: str) -> tuple[str, str]:
+    """The exact inverse of `_chord_name`: split a chord label as
+    `detect_chords` produces it (e.g. "C", "Am") back into (root,
+    quality). Real audio chord detection here is triad-only, so root +
+    "major"/"minor" is always sufficient — this isn't a heuristic guess,
+    just undoing `_chord_name`'s own formatting.
+    """
+    if label.endswith("m") and len(label) > 1:
+        return label[:-1], "minor"
+    return label, "major"
 
 
 def _best_chord_for_chroma(chroma_vector: np.ndarray) -> tuple[str, float, float]:
@@ -86,6 +99,7 @@ def _merge_adjacent(segments: list[ChordSegment]) -> list[ChordSegment]:
                 chord=seg.chord,
                 correlation=(previous.correlation + seg.correlation) / 2,
                 confidence=(previous.confidence + seg.confidence) / 2,
+                progression_corrected=previous.progression_corrected or seg.progression_corrected,
             )
         else:
             merged.append(seg)
