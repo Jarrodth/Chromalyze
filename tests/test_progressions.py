@@ -21,6 +21,10 @@ def test_realize_pop_progression_in_c_major():
     ]
     # Real spelled chord tones, not just roots:
     assert chords[2].notes == ["A", "C", "E"]
+    # I-V-vi-IV is scale degrees 1-5-6-4, same convention as
+    # DiatonicChord.degree in theory.py — matches the screenshot format
+    # this backs ("i (1)", "VI (6)", ...).
+    assert [c.degree for c in chords] == [1, 5, 6, 4]
 
 
 def test_realize_pop_progression_transposes_to_a_different_key():
@@ -40,6 +44,18 @@ def test_realize_jazz_ii_v_i_uses_seventh_chords():
         ("ii7", "D", "minor7"),
         ("V7", "G", "dominant7"),
         ("Imaj7", "C", "major7"),
+    ]
+
+
+def test_realize_minor_pop_progression_in_a_minor():
+    # i-VI-III-VII realized in A minor: Am-F-C-G — the exact case this
+    # degree field was added for.
+    chords = realize_progression(NAMED_PROGRESSIONS["minor_pop"], "A")
+    assert [(c.degree, c.roman_numeral, c.root, c.quality) for c in chords] == [
+        (1, "i", "A", "minor"),
+        (6, "VI", "F", "major"),
+        (3, "III", "C", "major"),
+        (7, "VII", "G", "major"),
     ]
 
 

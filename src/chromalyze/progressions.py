@@ -19,6 +19,7 @@ from .chords import ChordSegment, _merge_adjacent, parse_chord_label
 from .theory import (
     NOTE_NAME_TO_PITCH_CLASS,
     _CHORD_QUALITY_NUMERAL_DECORATION,
+    _nearest_scale_degree,
     _roman_numeral_for_interval,
     _root_name_for_interval,
     analyze_chord_function,
@@ -129,6 +130,7 @@ NAMED_PROGRESSIONS: dict[str, NamedProgression] = {
 
 @dataclass
 class ProgressionChord:
+    degree: int  # 1-7, same convention as DiatonicChord.degree in theory.py
     roman_numeral: str  # e.g. "I", "vi", "bVII", "ii7"
     root: str  # note name, e.g. "G"
     quality: str
@@ -146,9 +148,11 @@ def realize_progression(progression: NamedProgression, tonic: str) -> list[Progr
         root_name = _root_name_for_interval(tonic, progression.mode, step.interval)
         base_numeral = _roman_numeral_for_interval(step.interval, progression.mode)
         numeral = _CHORD_QUALITY_NUMERAL_DECORATION[step.quality](base_numeral)
+        degree, _ = _nearest_scale_degree(step.interval, progression.mode)
         chord = build_chord(root_name, step.quality)
         chords.append(
             ProgressionChord(
+                degree=degree + 1,
                 roman_numeral=numeral,
                 root=chord.root,
                 quality=chord.quality,
