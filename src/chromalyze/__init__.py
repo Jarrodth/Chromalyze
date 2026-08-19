@@ -36,6 +36,7 @@ from .progressions import (
     clean_chords_with_progression,
     identify_progression,
     realize_progression,
+    resolve_non_diatonic_chords,
     resolve_quality_oscillation,
 )
 from .scales import NAMED_SCALE_INTERVALS, build_named_scale
@@ -111,6 +112,7 @@ __all__ = [
     "best_progression_match",
     "clean_chords_with_progression",
     "resolve_quality_oscillation",
+    "resolve_non_diatonic_chords",
     "clean_chords_with_detected_loop",
     "LoopMatch",
     "LoopCleanupResult",

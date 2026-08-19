@@ -604,3 +604,80 @@ def clean_chords_with_detected_loop(
             )
 
     return LoopCleanupResult(chords=_merge_adjacent(cleaned), loops=loops)
+
+
+def _diatonic_quality_for_root(root: str, key_tonic: str, key_mode: str) -> str | None:
+    """Which triad quality (if any) makes `root` one of the key's own
+    diatonic scale-degree chords. None if `root` isn't a scale tone of the
+    key at all — a genuinely chromatic root has no single "the diatonic
+    answer" to correct toward.
+    """
+    for quality in ("major", "minor"):
+        if analyze_chord_function(root, quality, key_tonic, key_mode).is_diatonic:
+            return quality
+    return None
+
+
+def resolve_non_diatonic_chords(
+    chords: list[ChordSegment],
+    key_tonic: str,
+    key_mode: str,
+    confidence_threshold: float = DEFAULT_CONFIDENCE_THRESHOLD,
+) -> list[ChordSegment]:
+    """Correct a low-confidence chord to the key's own diatonic triad on
+    the same root, wherever it has one — a broader, final safety net
+    after resolve_quality_oscillation (only touches consecutive same-root
+    runs) and the two progression-based passes (only touch what fits a
+    specific repeating pattern or catalog entry). A genuinely isolated
+    low-confidence misread — nowhere near a matching neighbor, not part
+    of any repeating loop, not part of a catalog match — still has one
+    piece of evidence nothing else here uses: what its own root is
+    "supposed" to sound like in this key.
+
+    Deliberately never touches the dominant (scale degree 5) in a minor
+    key: a major V — the raised leading tone, "harmonic minor" — is one
+    of the single most standard, deliberate alterations in tonal minor-
+    key music, not noise. This isn't a judgment call unique to this
+    function — see NAMED_PROGRESSIONS["andalusian_cadence"]'s own
+    docstring for the same distinction made elsewhere in this codebase,
+    between a key's *own* diatonic chord and a real, common, intentional
+    borrowed/altered one.
+
+    Leaves a genuinely chromatic root (not a scale tone of the key at
+    all) alone entirely, and — same conservative rule as every other
+    pass here — never touches a segment the detector was already
+    confident about, whatever it reads as.
+    """
+    key_tonic_pc = NOTE_NAME_TO_PITCH_CLASS[key_tonic]
+    is_minor_key = key_mode == "minor"
+
+    cleaned = []
+    for seg in chords:
+        if seg.confidence > confidence_threshold:
+            cleaned.append(seg)
+            continue
+
+        root, quality = parse_chord_label(seg.chord)
+        diatonic_quality = _diatonic_quality_for_root(root, key_tonic, key_mode)
+        if diatonic_quality is None or diatonic_quality == quality:
+            cleaned.append(seg)
+            continue
+
+        root_interval = (NOTE_NAME_TO_PITCH_CLASS[root] - key_tonic_pc) % 12
+        if is_minor_key and root_interval == 7 and quality == "major":
+            cleaned.append(seg)  # the raised dominant — a deliberate convention, not noise
+            continue
+
+        expected_label = _triad_label(root, diatonic_quality)
+        cleaned.append(
+            ChordSegment(
+                start=seg.start,
+                end=seg.end,
+                chord=expected_label,
+                correlation=seg.correlation,
+                confidence=seg.confidence,
+                diatonic_corrected=True,
+            )
+        )
+
+    return _merge_adjacent(cleaned)

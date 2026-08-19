@@ -6,6 +6,7 @@ from chromalyze.progressions import (
     clean_chords_with_progression,
     identify_progression,
     realize_progression,
+    resolve_non_diatonic_chords,
     resolve_quality_oscillation,
 )
 
@@ -402,3 +403,69 @@ def test_clean_chords_with_detected_loop_corrects_across_overlapping_windows():
     assert len(corrected) == 1
     assert corrected[0].chord == "G"
     assert corrected[0].start == 22.0
+
+
+def test_resolve_non_diatonic_chords_corrects_an_isolated_low_confidence_misread():
+    # A minor's own tonic is Am (i) — a lone "A" (major), nowhere near a
+    # matching neighbor and not part of any repeating run, is exactly the
+    # case resolve_quality_oscillation and the loop/progression passes
+    # can't reach.
+    segments = [
+        _segment(0.0, 1.0, "D", 0.5),
+        _segment(1.0, 2.0, "A", 0.02),
+        _segment(2.0, 3.0, "C", 0.5),
+    ]
+    result = resolve_non_diatonic_chords(segments, key_tonic="A", key_mode="minor")
+    assert [s.chord for s in result] == ["D", "Am", "C"]
+    assert result[1].diatonic_corrected is True
+
+
+def test_resolve_non_diatonic_chords_leaves_a_confident_reading_alone():
+    segments = [
+        _segment(0.0, 1.0, "D", 0.5),
+        _segment(1.0, 2.0, "A", 0.4),  # confident — a real reading, not touched
+        _segment(2.0, 3.0, "C", 0.5),
+    ]
+    result = resolve_non_diatonic_chords(segments, key_tonic="A", key_mode="minor")
+    assert [s.chord for s in result] == ["D", "A", "C"]
+    assert all(not s.diatonic_corrected for s in result)
+
+
+def test_resolve_non_diatonic_chords_never_touches_the_raised_dominant():
+    # E major (V) in A minor is the standard harmonic-minor raised
+    # dominant — a deliberate, common convention, not noise, even at low
+    # confidence.
+    segments = [
+        _segment(0.0, 1.0, "D", 0.5),
+        _segment(1.0, 2.0, "E", 0.02),
+        _segment(2.0, 3.0, "C", 0.5),
+    ]
+    result = resolve_non_diatonic_chords(segments, key_tonic="A", key_mode="minor")
+    assert [s.chord for s in result] == ["D", "E", "C"]
+    assert all(not s.diatonic_corrected for s in result)
+
+
+def test_resolve_non_diatonic_chords_leaves_a_genuinely_chromatic_root_alone():
+    # Db isn't a scale tone of A minor at all (neither Db nor Dbm is
+    # diatonic) — nothing to correct it toward.
+    segments = [
+        _segment(0.0, 1.0, "D", 0.5),
+        _segment(1.0, 2.0, "Db", 0.02),
+        _segment(2.0, 3.0, "C", 0.5),
+    ]
+    result = resolve_non_diatonic_chords(segments, key_tonic="A", key_mode="minor")
+    assert [s.chord for s in result] == ["D", "Db", "C"]
+    assert all(not s.diatonic_corrected for s in result)
+
+
+def test_resolve_non_diatonic_chords_merges_a_corrected_segment_into_its_neighbors():
+    segments = [
+        _segment(0.0, 1.0, "Am", 0.5),
+        _segment(1.0, 2.0, "A", 0.02),  # should correct to "Am" and merge with both neighbors
+        _segment(2.0, 3.0, "Am", 0.5),
+        _segment(3.0, 4.0, "F", 0.5),
+    ]
+    result = resolve_non_diatonic_chords(segments, key_tonic="A", key_mode="minor")
+    assert [s.chord for s in result] == ["Am", "F"]
+    assert result[0].start == 0.0 and result[0].end == 3.0
+    assert result[0].diatonic_corrected is True
