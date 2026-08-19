@@ -387,33 +387,3 @@ def rumble_contaminated_stem():
 
     stems = {"vocals": (chord + rumble).astype(np.float32)}
     return stems, sr, "C"
-
-
-def make_bass_line_clip(roots: list[int], seconds_per_note: float, sr: int, path: str) -> None:
-    """Write a real WAV file playing a sequence of held single low notes
-    (real additive sine synthesis, an octave down from the octave-3 chords
-    elsewhere in this file, plus a quiet octave-up harmonic for a more
-    realistic bass timbre) — a stand-in for an isolated bass stem, where
-    only one pitch class is ever sounding at a time, not a full chord.
-    `roots` is a list of root pitch classes (0=C .. 11=B).
-    """
-    samples_per_note = int(seconds_per_note * sr)
-    t = np.arange(samples_per_note) / sr
-
-    segments = []
-    for root_pc in roots:
-        fundamental = note_freq(root_pc, octave=2)
-        wave = np.sin(2 * np.pi * fundamental * t) + 0.3 * np.sin(2 * np.pi * fundamental * 2 * t)
-        segments.append((wave / 1.3).astype(np.float32))
-
-    audio = np.concatenate(segments)
-    sf.write(path, audio, sr)
-
-
-@pytest.fixture
-def bass_line_clip(tmp_path):
-    path = str(tmp_path / "bass_line.wav")
-    # A-C-F-G, one held note each, 2 seconds per note.
-    roots = [9, 0, 5, 7]
-    make_bass_line_clip(roots, seconds_per_note=2.0, sr=22050, path=path)
-    return path, ["A", "C", "F", "G"], 2.0

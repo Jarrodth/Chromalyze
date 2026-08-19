@@ -1,5 +1,4 @@
 from .analyze import AnalysisResult, analyze
-from .bass import BassRootSegment, detect_bass_root_trace
 from .beats import BeatResult, detect_beats
 from .caged import (
     CAGED_ORDER,
@@ -63,8 +62,6 @@ __all__ = [
     "analyze",
     "AnalysisResult",
     "detect_beats",
-    "detect_bass_root_trace",
-    "BassRootSegment",
     "BeatResult",
     "detect_chords",
     "detect_chords_from_stems",
