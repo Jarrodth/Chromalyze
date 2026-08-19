@@ -2,6 +2,7 @@ from chromalyze.chords import ChordSegment
 from chromalyze.progressions import (
     NAMED_PROGRESSIONS,
     best_progression_match,
+    clean_chords_with_detected_loop,
     clean_chords_with_progression,
     identify_progression,
     realize_progression,
@@ -319,3 +320,67 @@ def test_resolve_quality_oscillation_leaves_a_consistent_run_alone():
 def test_resolve_quality_oscillation_handles_short_input():
     segments = [_segment(0.0, 1.0, "C", 0.5)]
     assert resolve_quality_oscillation(segments, key_tonic="C", key_mode="major") == segments
+
+
+def test_clean_chords_with_detected_loop_finds_a_non_catalog_loop():
+    # D-Bm-G-A repeated 4 times — not one of NAMED_PROGRESSIONS' 12
+    # entries, so clean_chords_with_progression couldn't touch this, but
+    # it's still a real, self-consistent repeating loop.
+    labels = ["D", "Bm", "G", "A"] * 4
+    labels[9] = "Eb"  # was "Bm"
+
+    segments = [_segment(float(i), float(i + 1), label, 0.01 if i == 9 else 0.5) for i, label in enumerate(labels)]
+
+    result = clean_chords_with_detected_loop(segments)
+
+    assert len(result.loops) == 1
+    assert result.loops[0].period == 4
+    corrected = [s for s in result.chords if s.loop_corrected]
+    assert len(corrected) == 1
+    assert corrected[0].chord == "Bm"
+    assert corrected[0].start == 9.0
+
+
+def test_clean_chords_with_detected_loop_prefers_the_shortest_period():
+    # A clean period-2 loop is also technically "explained" by period 4,
+    # 6, or 8 (same content, just re-described with a longer cycle) — the
+    # shortest period that reaches the best ratio should win.
+    labels = ["C", "G"] * 8
+    labels[5] = "Ab"  # was "G"
+    segments = [_segment(float(i), float(i + 1), label, 0.01 if i == 5 else 0.5) for i, label in enumerate(labels)]
+
+    result = clean_chords_with_detected_loop(segments)
+
+    assert len(result.loops) == 1
+    assert result.loops[0].period == 2
+    corrected = [s for s in result.chords if s.loop_corrected]
+    assert len(corrected) == 1
+    assert corrected[0].chord == "G"
+
+
+def test_clean_chords_with_detected_loop_leaves_confident_deviations_alone():
+    labels = ["D", "Bm", "G", "A"] * 4
+    labels[9] = "Eb"
+    segments = [_segment(float(i), float(i + 1), label, 0.4 if i == 9 else 0.5) for i, label in enumerate(labels)]
+
+    result = clean_chords_with_detected_loop(segments)
+
+    assert all(not s.loop_corrected for s in result.chords)
+    assert result.chords[9].chord == "Eb"
+
+
+def test_clean_chords_with_detected_loop_returns_nothing_for_unstructured_chords():
+    labels = ["C", "D", "E", "F", "G", "A", "B", "C#", "D#", "F#", "Bb", "Eb"]  # no repetition at all
+    segments = [_segment(float(i), float(i + 1), label, 0.01) for i, label in enumerate(labels)]
+
+    result = clean_chords_with_detected_loop(segments)
+
+    assert result.loops == []
+    assert [s.chord for s in result.chords] == labels
+
+
+def test_clean_chords_with_detected_loop_handles_short_input():
+    segments = [_segment(0.0, 1.0, "C", 0.5), _segment(1.0, 2.0, "G", 0.5)]
+    result = clean_chords_with_detected_loop(segments)
+    assert result.chords == segments
+    assert result.loops == []

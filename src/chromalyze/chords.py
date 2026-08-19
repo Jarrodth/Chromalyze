@@ -37,6 +37,7 @@ class ChordSegment:
     confidence: float  # gap between the best and second-best candidate — same convention as KeyResult.confidence in key.py
     progression_corrected: bool = False  # True if progressions.clean_chords_with_progression overrode this segment's chord
     quality_resolved: bool = False  # True if progressions.resolve_quality_oscillation overrode this segment's chord
+    loop_corrected: bool = False  # True if progressions.clean_chords_with_detected_loop overrode this segment's chord
 
 
 def _chord_name(root_pc: int, quality: str) -> str:
@@ -102,6 +103,7 @@ def _merge_adjacent(segments: list[ChordSegment]) -> list[ChordSegment]:
                 confidence=(previous.confidence + seg.confidence) / 2,
                 progression_corrected=previous.progression_corrected or seg.progression_corrected,
                 quality_resolved=previous.quality_resolved or seg.quality_resolved,
+                loop_corrected=previous.loop_corrected or seg.loop_corrected,
             )
         else:
             merged.append(seg)

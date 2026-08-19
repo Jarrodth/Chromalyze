@@ -433,3 +433,146 @@ def resolve_quality_oscillation(
         run_start = i
 
     return _merge_adjacent(cleaned)
+
+
+DEFAULT_LOOP_MIN_PERIOD = 2
+DEFAULT_LOOP_MAX_PERIOD = 8
+
+# A bucket needs at least this many real repeats before its majority vote
+# is trusted. With only 2 repeats, two random, unrelated readings already
+# "agree" with whichever one gets picked half the time by pure chance —
+# so a period tested with 2-item buckets looks artificially well-supported
+# even on data with no real loop in it at all. 3 pushes that chance
+# coincidence rate down a lot further (agreement needs 2 of 3 to line up,
+# not 1 of 2), at the cost of needing a period to repeat 3 full times
+# within the window before it's even considered.
+_MIN_LOOP_REPEATS = 3
+
+
+@dataclass
+class LoopMatch:
+    period: int  # discovered cycle length, in chord segments
+    cycle: list[tuple[str, str]]  # the (root, quality) pair for each of the `period` positions in the discovered cycle
+    match_ratio: float  # fraction of positions in the chunk that already agree with the discovered cycle
+
+
+def _detect_repeating_loop(
+    root_quality_pairs: list[tuple[str, str]],
+    min_period: int,
+    max_period: int,
+) -> LoopMatch | None:
+    """Find the shortest repeating cycle that best explains a real chord
+    sequence — unlike `best_progression_match`, this isn't checked against
+    any fixed catalog; the cycle's own content is *derived from the data
+    itself*, so it can find whatever loop a song is actually playing even
+    if it's not one of NAMED_PROGRESSIONS' 12 entries (which is most of
+    them — real songs are not obligated to be textbook progressions).
+
+    For each candidate period, every position's expected chord is
+    whichever (root, quality) pair is the majority of that position's own
+    repeats (position i, i+period, i+2*period, ...), same overall
+    "fraction of positions that agree" acceptance bar as
+    `best_progression_match` (>= 50%) rather than also demanding every
+    single position's own sub-vote clear 50% — a real loop with a little
+    genuine noise in it (which is exactly the case this exists for) can
+    easily have one or two positions with a weak plurality while still
+    being the right answer overall. A period is only even considered once
+    it has at least `_MIN_LOOP_REPEATS` real repeats to vote on, which is
+    what actually guards against a spuriously long period looking well-
+    supported by chance (see `_MIN_LOOP_REPEATS`) — the shortest period
+    that reaches the best overall ratio wins.
+
+    Returns None if no period in [min_period, max_period] reaches the 50%
+    overall-agreement bar.
+    """
+    n = len(root_quality_pairs)
+    best: LoopMatch | None = None
+
+    for period in range(min_period, min(max_period, n // _MIN_LOOP_REPEATS) + 1):
+        buckets: list[list[tuple[str, str]]] = [[] for _ in range(period)]
+        for i, pair in enumerate(root_quality_pairs):
+            buckets[i % period].append(pair)
+
+        if any(len(bucket) < _MIN_LOOP_REPEATS for bucket in buckets):
+            continue
+
+        cycle = [Counter(bucket).most_common(1)[0][0] for bucket in buckets]
+        match_ratio = sum(1 for i, pair in enumerate(root_quality_pairs) if pair == cycle[i % period]) / n
+        if best is None or match_ratio > best.match_ratio:
+            best = LoopMatch(period=period, cycle=cycle, match_ratio=match_ratio)
+
+    if best is not None and best.match_ratio < _MIN_PROGRESSION_MATCH_RATIO:
+        return None
+    return best
+
+
+@dataclass
+class LoopCleanupResult:
+    chords: list[ChordSegment]
+    loops: list[LoopMatch]  # one per chunk that actually had a correction applied from it; empty if nothing did
+
+
+def clean_chords_with_detected_loop(
+    chords: list[ChordSegment],
+    confidence_threshold: float = DEFAULT_CONFIDENCE_THRESHOLD,
+    window_size: int = DEFAULT_WINDOW_SIZE,
+    min_period: int = DEFAULT_LOOP_MIN_PERIOD,
+    max_period: int = DEFAULT_LOOP_MAX_PERIOD,
+) -> LoopCleanupResult:
+    """Correct low-confidence chord guesses using the song's own detected
+    repeating loop, instead of only checking against NAMED_PROGRESSIONS'
+    fixed catalog (see `clean_chords_with_progression`) — most real songs
+    aren't one of those 12 textbook progressions, but plenty still loop
+    *some* short repeating cycle, and that cycle can be found directly in
+    the data (see `_detect_repeating_loop`) without it needing a name.
+
+    Same chunked, confidence-gated shape as `clean_chords_with_progression`:
+    walks the sequence in fixed-size, non-overlapping chunks, finds each
+    chunk's own best-fitting loop independently, and — within that chunk
+    only — overwrites segments at or below `confidence_threshold` that
+    disagree with what the loop expects at their position. A confident
+    reading is never overruled just because it breaks the pattern.
+
+    Adjacent segments that end up sharing a chord after correction are
+    merged, same as `detect_chords` does for its own raw output. This
+    doesn't require or use a key — the loop is discovered purely from
+    root/quality repetition, unlike `resolve_quality_oscillation`
+    (needs a key for its diatonic tiebreak) — so run this on the
+    oscillation-resolved sequence, not before it, or the same power-chord
+    quality noise this is meant to see past will still be there.
+    """
+    if len(chords) < 2 * min_period:
+        return LoopCleanupResult(chords=chords, loops=[])
+
+    cleaned = list(chords)
+    loops: list[LoopMatch] = []
+
+    for chunk_start in range(0, len(chords), window_size):
+        chunk = chords[chunk_start : chunk_start + window_size]
+        if len(chunk) < 2 * min_period:
+            continue
+
+        root_quality_pairs = [parse_chord_label(seg.chord) for seg in chunk]
+        loop = _detect_repeating_loop(root_quality_pairs, min_period, max_period)
+        if loop is None:
+            continue
+
+        chunk_corrected = False
+        for offset, seg in enumerate(chunk):
+            expected_root, expected_quality = loop.cycle[offset % loop.period]
+            expected_label = _triad_label(expected_root, expected_quality)
+            if seg.confidence <= confidence_threshold and seg.chord != expected_label:
+                cleaned[chunk_start + offset] = ChordSegment(
+                    start=seg.start,
+                    end=seg.end,
+                    chord=expected_label,
+                    correlation=seg.correlation,
+                    confidence=seg.confidence,
+                    loop_corrected=True,
+                )
+                chunk_corrected = True
+
+        if chunk_corrected:
+            loops.append(loop)
+
+    return LoopCleanupResult(chords=_merge_adjacent(cleaned), loops=loops)
