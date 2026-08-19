@@ -8,7 +8,7 @@ from .beats import detect_beats
 from .chords import ChordSegment, detect_chords
 from .key import detect_key
 from .meter import detect_beats_per_measure
-from .preprocessing import DEFAULT_SAMPLE_RATE, load_audio
+from .preprocessing import DEFAULT_SAMPLE_RATE, bandpass_filter, load_audio
 from .theory import Scale, build_scale
 
 
@@ -31,7 +31,13 @@ def analyze(audio_file: str) -> AnalysisResult:
     y, sr = load_audio(audio_file, sr=DEFAULT_SAMPLE_RATE)
     beats = detect_beats(y, sr)
     key = detect_key(y, sr)
-    chords = detect_chords(y, sr, beat_times=beats.beat_times)
+    # Bandpassed only for chord detection, not beats/key/meter — chord
+    # template matching only cares about pitched content in a real chord's
+    # range, but beat tracking in particular leans on low-end (kick drum)
+    # onset energy that bandpass_filter's default range would remove. See
+    # DEFAULT_CHORD_BANDPASS_LOW_HZ/HIGH_HZ in preprocessing.py for why
+    # this specific range was chosen.
+    chords = detect_chords(bandpass_filter(y, sr), sr, beat_times=beats.beat_times)
     scale = build_scale(key.tonic, key.mode)
     meter = detect_beats_per_measure(y, sr, beats.beat_times)
 

@@ -360,3 +360,60 @@ def contaminated_stems_clip():
 
     stems = {"vocals": harmony, "drums": drums}
     return stems, sr, "C"
+
+
+@pytest.fixture
+def rumble_contaminated_stem():
+    """A single raw stem: a clean, quiet C major triad plus loud sub-bass
+    rumble (a stand-in for mic handling noise/room rumble/kick-drum bleed
+    that survived stem separation) at F#1 (~46Hz) — a pitch class
+    completely disjoint from C major, chosen specifically below
+    DEFAULT_CHORD_BANDPASS_LOW_HZ (70Hz) so bandpass_filter should remove
+    it entirely while leaving the real chord untouched.
+    """
+    sr = 22050
+    duration_seconds = 2.0
+    samples = int(duration_seconds * sr)
+    t = np.arange(samples) / sr
+
+    chord = np.zeros(samples, dtype=np.float32)
+    for interval in (0, 4, 7):
+        pc = interval % 12
+        chord += np.sin(2 * np.pi * note_freq(pc, octave=3) * t).astype(np.float32)
+    chord /= 3
+
+    rumble_freq = note_freq(6, octave=1)  # F#1, ~46Hz
+    rumble = 8.0 * np.sin(2 * np.pi * rumble_freq * t).astype(np.float32)
+
+    stems = {"vocals": (chord + rumble).astype(np.float32)}
+    return stems, sr, "C"
+
+
+def make_bass_line_clip(roots: list[int], seconds_per_note: float, sr: int, path: str) -> None:
+    """Write a real WAV file playing a sequence of held single low notes
+    (real additive sine synthesis, an octave down from the octave-3 chords
+    elsewhere in this file, plus a quiet octave-up harmonic for a more
+    realistic bass timbre) — a stand-in for an isolated bass stem, where
+    only one pitch class is ever sounding at a time, not a full chord.
+    `roots` is a list of root pitch classes (0=C .. 11=B).
+    """
+    samples_per_note = int(seconds_per_note * sr)
+    t = np.arange(samples_per_note) / sr
+
+    segments = []
+    for root_pc in roots:
+        fundamental = note_freq(root_pc, octave=2)
+        wave = np.sin(2 * np.pi * fundamental * t) + 0.3 * np.sin(2 * np.pi * fundamental * 2 * t)
+        segments.append((wave / 1.3).astype(np.float32))
+
+    audio = np.concatenate(segments)
+    sf.write(path, audio, sr)
+
+
+@pytest.fixture
+def bass_line_clip(tmp_path):
+    path = str(tmp_path / "bass_line.wav")
+    # A-C-F-G, one held note each, 2 seconds per note.
+    roots = [9, 0, 5, 7]
+    make_bass_line_clip(roots, seconds_per_note=2.0, sr=22050, path=path)
+    return path, ["A", "C", "F", "G"], 2.0

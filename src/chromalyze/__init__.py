@@ -1,4 +1,5 @@
 from .analyze import AnalysisResult, analyze
+from .bass import BassRootSegment, detect_bass_root_trace
 from .beats import BeatResult, detect_beats
 from .caged import (
     CAGED_ORDER,
@@ -21,7 +22,7 @@ from .instruments import (
 from .intervals import Interval, common_interval_reference, interval_between, interval_from_semitones
 from .key import KeyResult, detect_key
 from .meter import TimeSignatureResult, detect_beats_per_measure
-from .preprocessing import load_audio
+from .preprocessing import bandpass_filter, load_audio
 from .progressions import (
     NAMED_PROGRESSIONS,
     LoopCleanupResult,
@@ -62,6 +63,8 @@ __all__ = [
     "analyze",
     "AnalysisResult",
     "detect_beats",
+    "detect_bass_root_trace",
+    "BassRootSegment",
     "BeatResult",
     "detect_chords",
     "detect_chords_from_stems",
@@ -72,6 +75,7 @@ __all__ = [
     "detect_key",
     "KeyResult",
     "load_audio",
+    "bandpass_filter",
     "detect_bpm",
     "build_scale",
     "Scale",

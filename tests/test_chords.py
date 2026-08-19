@@ -129,3 +129,18 @@ def test_detect_chords_from_stems_excludes_drum_contamination(contaminated_stems
     naive_mix = combine_stems(stems, drum_attenuation=1.0)
     contaminated_segments = detect_chords(naive_mix, sr, segment_seconds=1.0)
     assert any(s.chord != expected_chord for s in contaminated_segments)
+
+
+def test_detect_chords_from_stems_bandpass_removes_sub_bass_rumble(rumble_contaminated_stem):
+    stems, sr, expected_chord = rumble_contaminated_stem
+
+    # apply_bandpass defaults to True — loud sub-bass rumble below
+    # DEFAULT_CHORD_BANDPASS_LOW_HZ shouldn't derail detection.
+    filtered_segments = detect_chords_from_stems(stems, sr, segment_seconds=1.0)
+    assert all(s.chord == expected_chord for s in filtered_segments)
+
+    # Same signal with bandpass explicitly disabled — proves the rumble
+    # really would derail detection without it, not just that the
+    # parameter exists.
+    unfiltered_segments = detect_chords_from_stems(stems, sr, segment_seconds=1.0, apply_bandpass=False)
+    assert any(s.chord != expected_chord for s in unfiltered_segments)
