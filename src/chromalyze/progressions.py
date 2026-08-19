@@ -269,10 +269,13 @@ def best_progression_match(chords: list[tuple[str, str]], key_tonic: str, key_mo
     return best
 
 
+DEFAULT_WINDOW_SIZE = 16  # chord segments per local-matching chunk — see clean_chords_with_progression
+
+
 @dataclass
 class ProgressionCleanupResult:
     chords: list[ChordSegment]
-    match: ProgressionMatch | None  # None if nothing in the catalog explained the sequence well enough to correct anything
+    matches: list[ProgressionMatch]  # one per chunk that actually got a correction applied from it; empty if nothing did
 
 
 def clean_chords_with_progression(
@@ -280,48 +283,63 @@ def clean_chords_with_progression(
     key_tonic: str,
     key_mode: str,
     confidence_threshold: float = DEFAULT_CONFIDENCE_THRESHOLD,
+    window_size: int = DEFAULT_WINDOW_SIZE,
 ) -> ProgressionCleanupResult:
     """Correct low-confidence chord guesses using the closest-matching
     catalog progression, instead of displaying every shaky raw reading at
     face value.
 
-    Finds the best progression match for the *entire* sequence (see
-    `best_progression_match`), then walks it again and overwrites only the
-    segments whose confidence is at or below `confidence_threshold` *and*
-    whose chord disagrees with what the matched progression expects at
-    that position. A segment the detector was already confident about is
-    left alone even if it doesn't fit the pattern — real songs do
-    genuinely deviate from a textbook progression sometimes (a bridge, a
-    passing chord, a key change), and a confident real reading shouldn't
-    be overruled by a generic template just because it's unusual.
+    A real song is sectional — a verse and a chorus often loop different
+    progressions — so this doesn't fit one progression to the entire
+    sequence. Instead it walks the sequence in fixed-size, non-overlapping
+    chunks of `window_size` segments, finds each chunk's own best match
+    independently (see `best_progression_match`), and — within that chunk
+    only — overwrites the segments whose confidence is at or below
+    `confidence_threshold` *and* whose chord disagrees with what the
+    chunk's match expects at that position. A segment the detector was
+    already confident about is left alone even if it doesn't fit the
+    pattern — real songs do genuinely deviate from a textbook progression
+    sometimes (a bridge, a passing chord, a key change), and a confident
+    real reading shouldn't be overruled by a generic template just
+    because it's unusual. A trailing partial chunk shorter than 3
+    segments is left as detected — too little evidence to fit anything
+    meaningfully.
 
     A corrected segment keeps its original `correlation`/`confidence` —
     those still honestly describe how ambiguous the audio itself was —
     with only `chord` changed and `progression_corrected` set, so a
     caller can tell it apart from a directly-detected one. Adjacent
-    segments that end up sharing a chord after correction are merged back
-    together, same as `detect_chords` does for its own raw output.
+    segments that end up sharing a chord after correction (within a
+    chunk, or across a chunk boundary) are merged back together, same as
+    `detect_chords` does for its own raw output.
     """
     if len(chords) < 3:
-        return ProgressionCleanupResult(chords=chords, match=None)
+        return ProgressionCleanupResult(chords=chords, matches=[])
 
-    root_quality_pairs = [parse_chord_label(seg.chord) for seg in chords]
-    match = best_progression_match(root_quality_pairs, key_tonic, key_mode)
-    if match is None:
-        return ProgressionCleanupResult(chords=chords, match=None)
+    cleaned = list(chords)
+    matches: list[ProgressionMatch] = []
 
-    progression = NAMED_PROGRESSIONS[match.name]
-    realized = realize_progression(progression, key_tonic)
-    expected_labels = [
-        _triad_label(realized[(match.phase + i) % len(realized)].root, realized[(match.phase + i) % len(realized)].quality)
-        for i in range(len(chords))
-    ]
+    for chunk_start in range(0, len(chords), window_size):
+        chunk = chords[chunk_start : chunk_start + window_size]
+        if len(chunk) < 3:
+            continue
 
-    cleaned = []
-    for seg, expected_label in zip(chords, expected_labels):
-        if seg.confidence <= confidence_threshold and seg.chord != expected_label:
-            cleaned.append(
-                ChordSegment(
+        root_quality_pairs = [parse_chord_label(seg.chord) for seg in chunk]
+        match = best_progression_match(root_quality_pairs, key_tonic, key_mode)
+        if match is None:
+            continue
+
+        progression = NAMED_PROGRESSIONS[match.name]
+        realized = realize_progression(progression, key_tonic)
+        expected_labels = [
+            _triad_label(realized[(match.phase + i) % len(realized)].root, realized[(match.phase + i) % len(realized)].quality)
+            for i in range(len(chunk))
+        ]
+
+        chunk_corrected = False
+        for offset, (seg, expected_label) in enumerate(zip(chunk, expected_labels)):
+            if seg.confidence <= confidence_threshold and seg.chord != expected_label:
+                cleaned[chunk_start + offset] = ChordSegment(
                     start=seg.start,
                     end=seg.end,
                     chord=expected_label,
@@ -329,8 +347,9 @@ def clean_chords_with_progression(
                     confidence=seg.confidence,
                     progression_corrected=True,
                 )
-            )
-        else:
-            cleaned.append(seg)
+                chunk_corrected = True
 
-    return ProgressionCleanupResult(chords=_merge_adjacent(cleaned), match=match)
+        if chunk_corrected:
+            matches.append(match)
+
+    return ProgressionCleanupResult(chords=_merge_adjacent(cleaned), matches=matches)

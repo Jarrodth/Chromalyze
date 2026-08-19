@@ -152,8 +152,7 @@ def test_clean_chords_with_progression_corrects_a_low_confidence_outlier():
 
     result = clean_chords_with_progression(segments, key_tonic="C", key_mode="major")
 
-    assert result.match is not None
-    assert result.match.name == "pop"
+    assert any(m.name == "pop" for m in result.matches)
     corrected = [s for s in result.chords if s.progression_corrected]
     assert len(corrected) == 1
     assert corrected[0].chord == "Am"
@@ -190,8 +189,7 @@ def test_clean_chords_with_progression_merges_a_corrected_segment_into_its_neigh
 
     result = clean_chords_with_progression(segments, key_tonic="C", key_mode="major")
 
-    assert result.match is not None
-    assert result.match.name == "twelve_bar_blues"
+    assert any(m.name == "twelve_bar_blues" for m in result.matches)
     assert result.chords[0].chord == "C"
     assert result.chords[0].start == 0.0
     assert result.chords[0].end == 4.0
@@ -205,11 +203,34 @@ def test_clean_chords_with_progression_returns_none_match_when_nothing_fits():
         _segment(2.0, 3.0, "F#m", 0.9),
     ]
     result = clean_chords_with_progression(segments, key_tonic="C", key_mode="major")
-    assert result.match is None
+    assert result.matches == []
     assert result.chords == segments
 
 
 def test_clean_chords_with_progression_handles_empty_input():
     result = clean_chords_with_progression([], key_tonic="C", key_mode="major")
     assert result.chords == []
-    assert result.match is None
+    assert result.matches == []
+
+
+def test_clean_chords_with_progression_handles_a_long_sectional_sequence():
+    # A song where the first half loops the pop progression and the
+    # second half loops the '50s progression — no single progression
+    # explains the whole thing, but each half should still get its own
+    # chunk-local corrections.
+    pop_labels = ["C", "G", "Am", "F"] * 4  # 16 segments, "Am" at index 2, 6, 10, 14
+    fifties_labels = ["C", "Am", "F", "G"] * 4  # 16 segments, "Am" at index 1, 5, 9, 13
+    labels = pop_labels + fifties_labels
+    # Corrupt one low-confidence "Am" segment in each half.
+    labels[6] = "Db"  # pop half
+    labels[16 + 5] = "Eb"  # fifties half
+
+    segments = [
+        _segment(float(i), float(i + 1), label, 0.01 if i in (6, 21) else 0.5) for i, label in enumerate(labels)
+    ]
+
+    result = clean_chords_with_progression(segments, key_tonic="C", key_mode="major", window_size=16)
+
+    assert {m.name for m in result.matches} == {"pop", "fifties"}
+    corrected = {s.start: s.chord for s in result.chords if s.progression_corrected}
+    assert corrected == {6.0: "Am", 21.0: "Am"}
