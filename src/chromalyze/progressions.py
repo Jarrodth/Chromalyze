@@ -509,13 +509,17 @@ def _detect_repeating_loop(
 @dataclass
 class LoopCleanupResult:
     chords: list[ChordSegment]
-    loops: list[LoopMatch]  # one per chunk that actually had a correction applied from it; empty if nothing did
+    loops: list[LoopMatch]  # every loop found by any of the overlapping windows searched, whether or not it won a position's vote
+
+
+DEFAULT_WINDOW_STEP = 4  # how far the window slides between votes — smaller than DEFAULT_WINDOW_SIZE so windows overlap
 
 
 def clean_chords_with_detected_loop(
     chords: list[ChordSegment],
     confidence_threshold: float = DEFAULT_CONFIDENCE_THRESHOLD,
     window_size: int = DEFAULT_WINDOW_SIZE,
+    window_step: int = DEFAULT_WINDOW_STEP,
     min_period: int = DEFAULT_LOOP_MIN_PERIOD,
     max_period: int = DEFAULT_LOOP_MAX_PERIOD,
 ) -> LoopCleanupResult:
@@ -526,12 +530,19 @@ def clean_chords_with_detected_loop(
     *some* short repeating cycle, and that cycle can be found directly in
     the data (see `_detect_repeating_loop`) without it needing a name.
 
-    Same chunked, confidence-gated shape as `clean_chords_with_progression`:
-    walks the sequence in fixed-size, non-overlapping chunks, finds each
-    chunk's own best-fitting loop independently, and — within that chunk
-    only — overwrites segments at or below `confidence_threshold` that
-    disagree with what the loop expects at their position. A confident
-    reading is never overruled just because it breaks the pattern.
+    Slides a `window_size`-wide window across the sequence in steps of
+    `window_step` (smaller than `window_size`, so consecutive windows
+    overlap) and lets every window that covers a given position vote on
+    what that position's loop-implied chord should be. This isn't a
+    fixed-chunk version of the same idea: a real repeat that would
+    straddle one arbitrary chunk boundary and get cut in half — visible
+    on neither side alone — is still seen whole by whichever overlapping
+    windows happen to sit around it instead of on the edge. A position is
+    only corrected when it's at or below `confidence_threshold` *and* a
+    real majority of the windows that both cover it and found a loop
+    agree on the same replacement chord — a lone dissenting window (or an
+    evenly split one) isn't enough, same conservative bar as everywhere
+    else in this module.
 
     Adjacent segments that end up sharing a chord after correction are
     merged, same as `detect_chords` does for its own raw output. This
@@ -541,38 +552,55 @@ def clean_chords_with_detected_loop(
     oscillation-resolved sequence, not before it, or the same power-chord
     quality noise this is meant to see past will still be there.
     """
-    if len(chords) < 2 * min_period:
+    n = len(chords)
+    if n < 2 * min_period:
         return LoopCleanupResult(chords=chords, loops=[])
 
-    cleaned = list(chords)
+    root_quality_pairs = [parse_chord_label(seg.chord) for seg in chords]
+
+    # votes[i] collects every overlapping window's proposed chord for
+    # position i, so a position that would sit right on a fixed chunk
+    # boundary still gets a fair say from whichever windows see it
+    # comfortably away from their own edges.
+    votes: list[list[tuple[str, str]]] = [[] for _ in range(n)]
     loops: list[LoopMatch] = []
 
-    for chunk_start in range(0, len(chords), window_size):
-        chunk = chords[chunk_start : chunk_start + window_size]
-        if len(chunk) < 2 * min_period:
+    last_start = max(n - window_size, 0)
+    window_starts = list(range(0, last_start + 1, window_step))
+    if window_starts[-1] != last_start:
+        window_starts.append(last_start)  # guarantee the tail is covered even if it falls off the step grid
+
+    for window_start in window_starts:
+        window_end = min(window_start + window_size, n)
+        window_pairs = root_quality_pairs[window_start:window_end]
+        if len(window_pairs) < 2 * min_period:
             continue
 
-        root_quality_pairs = [parse_chord_label(seg.chord) for seg in chunk]
-        loop = _detect_repeating_loop(root_quality_pairs, min_period, max_period)
+        loop = _detect_repeating_loop(window_pairs, min_period, max_period)
         if loop is None:
             continue
 
-        chunk_corrected = False
-        for offset, seg in enumerate(chunk):
-            expected_root, expected_quality = loop.cycle[offset % loop.period]
-            expected_label = _triad_label(expected_root, expected_quality)
-            if seg.confidence <= confidence_threshold and seg.chord != expected_label:
-                cleaned[chunk_start + offset] = ChordSegment(
-                    start=seg.start,
-                    end=seg.end,
-                    chord=expected_label,
-                    correlation=seg.correlation,
-                    confidence=seg.confidence,
-                    loop_corrected=True,
-                )
-                chunk_corrected = True
+        loops.append(loop)
+        for offset in range(len(window_pairs)):
+            votes[window_start + offset].append(loop.cycle[offset % loop.period])
 
-        if chunk_corrected:
-            loops.append(loop)
+    cleaned = list(chords)
+    for i, seg in enumerate(chords):
+        if seg.confidence > confidence_threshold or not votes[i]:
+            continue
+        winner, winner_count = Counter(votes[i]).most_common(1)[0]
+        if winner_count / len(votes[i]) <= 0.5:
+            continue  # the windows covering this position don't actually agree
+
+        expected_label = _triad_label(*winner)
+        if seg.chord != expected_label:
+            cleaned[i] = ChordSegment(
+                start=seg.start,
+                end=seg.end,
+                chord=expected_label,
+                correlation=seg.correlation,
+                confidence=seg.confidence,
+                loop_corrected=True,
+            )
 
     return LoopCleanupResult(chords=_merge_adjacent(cleaned), loops=loops)

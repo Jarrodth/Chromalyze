@@ -384,3 +384,21 @@ def test_clean_chords_with_detected_loop_handles_short_input():
     result = clean_chords_with_detected_loop(segments)
     assert result.chords == segments
     assert result.loops == []
+
+
+def test_clean_chords_with_detected_loop_corrects_across_overlapping_windows():
+    # A loop much longer than one window (40 segments vs the default
+    # window_size of 16) — this only exercises the sliding-window voting
+    # machinery (several overlapping windows, not just one, have to
+    # agree) rather than one window covering everything in a single shot.
+    labels = ["D", "Bm", "G", "A"] * 10
+    labels[22] = "Eb"  # was "G" (22 % 4 == 2)
+
+    segments = [_segment(float(i), float(i + 1), label, 0.01 if i == 22 else 0.5) for i, label in enumerate(labels)]
+
+    result = clean_chords_with_detected_loop(segments)
+
+    corrected = [s for s in result.chords if s.loop_corrected]
+    assert len(corrected) == 1
+    assert corrected[0].chord == "G"
+    assert corrected[0].start == 22.0
