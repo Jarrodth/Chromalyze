@@ -436,6 +436,20 @@ def test_resolve_non_diatonic_chords_corrects_an_isolated_low_confidence_misread
     assert result[1].diatonic_corrected is True
 
 
+def test_resolve_non_diatonic_chords_default_threshold_reaches_the_005_to_015_band():
+    # The default is deliberately higher than DEFAULT_CONFIDENCE_THRESHOLD
+    # (0.05) — this specific segment (0.09) would be left alone by every
+    # other pass in this module at their own default, but should still be
+    # reachable here.
+    segments = [
+        _segment(0.0, 1.0, "D", 0.5),
+        _segment(1.0, 2.0, "A", 0.09),
+        _segment(2.0, 3.0, "C", 0.5),
+    ]
+    result = resolve_non_diatonic_chords(segments, key_tonic="A", key_mode="minor")
+    assert [s.chord for s in result] == ["D", "Am", "C"]
+
+
 def test_resolve_non_diatonic_chords_leaves_a_confident_reading_alone():
     segments = [
         _segment(0.0, 1.0, "D", 0.5),

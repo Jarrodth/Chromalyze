@@ -610,6 +610,19 @@ def clean_chords_with_detected_loop(
     return LoopCleanupResult(chords=_merge_adjacent(cleaned), loops=loops)
 
 
+# Higher than DEFAULT_CONFIDENCE_THRESHOLD (0.05), which the other three
+# passes in this module keep — see key.py's own documented convention:
+# under ~0.05 is genuine ambiguity, over ~0.15 is a clear, unambiguous
+# winner, and the 0.05-0.15 band in between is still not a confident read
+# either. Safe to use that full band here specifically (unlike the other
+# three passes) because this is the only one with a real, targeted
+# exception for a deliberate non-diatonic convention (the raised dominant,
+# below) — a pass with no such protection reaching further into that band
+# risks quietly flattening a real chromatic chord along with genuine
+# misreads; this one already guards against the single most common case.
+DEFAULT_DIATONIC_CONFIDENCE_THRESHOLD = 0.15
+
+
 def _diatonic_quality_for_root(root: str, key_tonic: str, key_mode: str) -> str | None:
     """Which triad quality (if any) makes `root` one of the key's own
     diatonic scale-degree chords. None if `root` isn't a scale tone of the
@@ -626,7 +639,7 @@ def resolve_non_diatonic_chords(
     chords: list[ChordSegment],
     key_tonic: str,
     key_mode: str,
-    confidence_threshold: float = DEFAULT_CONFIDENCE_THRESHOLD,
+    confidence_threshold: float = DEFAULT_DIATONIC_CONFIDENCE_THRESHOLD,
 ) -> list[ChordSegment]:
     """Correct a low-confidence chord to the key's own diatonic triad on
     the same root, wherever it has one — a broader, final safety net
