@@ -5,6 +5,7 @@ from chromalyze.progressions import (
     clean_chords_with_progression,
     identify_progression,
     realize_progression,
+    resolve_quality_oscillation,
 )
 
 
@@ -234,3 +235,87 @@ def test_clean_chords_with_progression_handles_a_long_sectional_sequence():
     assert {m.name for m in result.matches} == {"pop", "fifties"}
     corrected = {s.start: s.chord for s in result.chords if s.progression_corrected}
     assert corrected == {6.0: "Am", 21.0: "Am"}
+
+
+def test_resolve_quality_oscillation_collapses_a_flip_flopping_root():
+    # F is diatonically major in C major (IV) — a power-chord ambiguity
+    # flip-flopping between F and Fm should collapse to the diatonic F.
+    segments = [
+        _segment(0.0, 1.0, "C", 0.5),
+        _segment(1.0, 2.0, "F", 0.02),
+        _segment(2.0, 3.0, "Fm", 0.02),
+        _segment(3.0, 4.0, "F", 0.02),
+        _segment(4.0, 5.0, "Fm", 0.02),
+        _segment(5.0, 6.0, "G", 0.5),
+    ]
+
+    result = resolve_quality_oscillation(segments, key_tonic="C", key_mode="major")
+
+    assert [s.chord for s in result] == ["C", "F", "G"]
+    assert result[1].start == 1.0 and result[1].end == 5.0
+    assert result[1].quality_resolved is True
+
+
+def test_resolve_quality_oscillation_can_resolve_to_minor():
+    # A is the tonic of A minor — diatonically minor (i), not major — so
+    # oscillation on the tonic root should resolve to "Am", not "A". Not
+    # a blanket "prefer major" rule: whichever reading is actually the
+    # key's own diatonic triad wins, in either direction.
+    segments = [
+        _segment(0.0, 1.0, "D", 0.5),
+        _segment(1.0, 2.0, "Am", 0.02),
+        _segment(2.0, 3.0, "A", 0.02),
+        _segment(3.0, 4.0, "Am", 0.02),
+        _segment(4.0, 5.0, "E", 0.5),
+    ]
+
+    result = resolve_quality_oscillation(segments, key_tonic="A", key_mode="minor")
+
+    assert [s.chord for s in result] == ["D", "Am", "E"]
+
+
+def test_resolve_quality_oscillation_leaves_a_confident_segment_alone():
+    segments = [
+        _segment(0.0, 1.0, "F", 0.02),
+        _segment(1.0, 2.0, "Fm", 0.4),  # confident — a genuine reading, not touched
+        _segment(2.0, 3.0, "F", 0.02),
+    ]
+
+    result = resolve_quality_oscillation(segments, key_tonic="C", key_mode="major")
+
+    assert [s.chord for s in result] == ["F", "Fm", "F"]
+    assert result[1].quality_resolved is False
+
+
+def test_resolve_quality_oscillation_falls_back_to_majority_for_a_chromatic_root():
+    # Db is diatonic in C major as neither major nor minor — nothing to
+    # prefer on theory grounds, so majority (2x major vs 1x minor) wins.
+    segments = [
+        _segment(0.0, 1.0, "C", 0.5),
+        _segment(1.0, 2.0, "Db", 0.02),
+        _segment(2.0, 3.0, "Dbm", 0.02),
+        _segment(3.0, 4.0, "Db", 0.02),
+        _segment(4.0, 5.0, "G", 0.5),
+    ]
+
+    result = resolve_quality_oscillation(segments, key_tonic="C", key_mode="major")
+
+    assert [s.chord for s in result] == ["C", "Db", "G"]
+
+
+def test_resolve_quality_oscillation_leaves_a_consistent_run_alone():
+    segments = [
+        _segment(0.0, 1.0, "F", 0.02),
+        _segment(1.0, 2.0, "F", 0.02),
+        _segment(2.0, 3.0, "G", 0.5),
+    ]
+
+    result = resolve_quality_oscillation(segments, key_tonic="C", key_mode="major")
+
+    assert [s.chord for s in result] == ["F", "G"]
+    assert all(not s.quality_resolved for s in result)
+
+
+def test_resolve_quality_oscillation_handles_short_input():
+    segments = [_segment(0.0, 1.0, "C", 0.5)]
+    assert resolve_quality_oscillation(segments, key_tonic="C", key_mode="major") == segments

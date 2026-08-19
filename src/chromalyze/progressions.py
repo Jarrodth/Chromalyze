@@ -12,6 +12,7 @@ closing V is a borrowed/altered dominant, not natural minor's own
 
 from __future__ import annotations
 
+from collections import Counter
 from dataclasses import dataclass, field
 
 from .chords import ChordSegment, _merge_adjacent, parse_chord_label
@@ -353,3 +354,82 @@ def clean_chords_with_progression(
             matches.append(match)
 
     return ProgressionCleanupResult(chords=_merge_adjacent(cleaned), matches=matches)
+
+
+def _diatonic_or_majority_quality(root: str, qualities: list[str], key_tonic: str, key_mode: str) -> str:
+    for quality in ("major", "minor"):
+        if analyze_chord_function(root, quality, key_tonic, key_mode).is_diatonic:
+            return quality
+    # Neither reading is the key's own diatonic triad on this root (a
+    # genuinely chromatic root) — nothing to prefer on theory grounds, so
+    # fall back to whichever quality actually showed up more often.
+    return Counter(qualities).most_common(1)[0][0]
+
+
+def resolve_quality_oscillation(
+    chords: list[ChordSegment],
+    key_tonic: str,
+    key_mode: str,
+    confidence_threshold: float = DEFAULT_CONFIDENCE_THRESHOLD,
+) -> list[ChordSegment]:
+    """Collapse a root that keeps flipping between major and minor back to
+    a single quality, using the detected key's own diatonic triad on that
+    root as the tiebreaker — e.g. "Fm, F, Fm, F, ..." collapses to a
+    single "F" if the song is in a key where F is diatonically major (an
+    A minor song's bVI), or to a single "Am" instead of "A" for the tonic
+    of that same key, since A minor's own i chord is minor. This isn't a
+    blanket "prefer major" rule: whichever reading actually belongs to
+    the key wins, in either direction.
+
+    Why this exists: a power/distorted-guitar chord (root + fifth, no
+    third) genuinely carries no major/minor information in its chroma, so
+    detect_chords' template matching is close to a coin flip between the
+    two — the same chord repeating in the same riff commonly shows up as
+    alternating labels on the same root even though only one chord is
+    actually being played, a different failure mode than a wrong root
+    entirely (see clean_chords_with_progression) or an isolated single-
+    window misread (see chords.py's own smoothing pass).
+
+    Within each maximal run of consecutive segments sharing a root, if
+    more than one quality appears, every segment in the run whose
+    confidence is at or below `confidence_threshold` is reassigned to the
+    winning quality; a segment the detector was already confident about
+    is left alone even if it's the "wrong" side of the flip, same
+    conservative rule as clean_chords_with_progression. Adjacent segments
+    that end up sharing a chord afterward are merged, same as
+    detect_chords does for its own raw output.
+    """
+    if len(chords) < 2:
+        return chords
+
+    roots = [parse_chord_label(seg.chord)[0] for seg in chords]
+    qualities = [parse_chord_label(seg.chord)[1] for seg in chords]
+
+    cleaned = list(chords)
+    run_start = 0
+    for i in range(1, len(chords) + 1):
+        if i < len(chords) and roots[i] == roots[run_start]:
+            continue
+
+        run_end = i  # exclusive
+        run_qualities = qualities[run_start:run_end]
+        if run_end - run_start >= 2 and len(set(run_qualities)) > 1:
+            root = roots[run_start]
+            winning_quality = _diatonic_or_majority_quality(root, run_qualities, key_tonic, key_mode)
+            winning_label = root if winning_quality == "major" else f"{root}m"
+
+            for j in range(run_start, run_end):
+                seg = chords[j]
+                if seg.confidence <= confidence_threshold and seg.chord != winning_label:
+                    cleaned[j] = ChordSegment(
+                        start=seg.start,
+                        end=seg.end,
+                        chord=winning_label,
+                        correlation=seg.correlation,
+                        confidence=seg.confidence,
+                        quality_resolved=True,
+                    )
+
+        run_start = i
+
+    return _merge_adjacent(cleaned)

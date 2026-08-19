@@ -33,6 +33,7 @@ from .progressions import (
     clean_chords_with_progression,
     identify_progression,
     realize_progression,
+    resolve_quality_oscillation,
 )
 from .scales import NAMED_SCALE_INTERVALS, build_named_scale
 from .stems import DRUM_STEM_NAMES, combine_stems
@@ -105,6 +106,7 @@ __all__ = [
     "identify_progression",
     "best_progression_match",
     "clean_chords_with_progression",
+    "resolve_quality_oscillation",
     "CAGED_ORDER",
     "CAGED_SHAPES",
     "CagedChordPosition",
