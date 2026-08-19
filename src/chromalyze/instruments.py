@@ -196,6 +196,9 @@ def practical_chord_voicing(
     return None
 
 
+_POWER_CHORD_ROOT_STRINGS = 2  # only the two lowest strings ever host a power chord's root — see below
+
+
 def practical_power_chord_voicing(
     root_pitch_class: int, tuning: Tuning, num_frets: int = DEFAULT_NUM_FRETS
 ) -> list[FretPosition] | None:
@@ -207,12 +210,22 @@ def practical_power_chord_voicing(
     are actually played — real players mute everything except root and
     fifth, they don't ring out every reachable string.
 
-    The fret offset between the two strings isn't always 2 — standard
-    tuning's G-to-B gap is a major 3rd instead of the usual perfect 4th,
-    so a power chord rooted on the G string needs +3 frets on the B
-    string, not +2 (real, well-known guitar lore, verified here against
-    the tuning's actual string intervals rather than hardcoded, so it's
-    correct for any tuning, not just standard).
+    Only the two lowest strings are ever considered as the *root* string
+    (the classic movable "E-shape" and "A-shape" forms every guitarist
+    already knows) — not every adjacent string pair up the neck. Naively
+    picking whichever pair gives the lowest fret number, across all pairs,
+    finds voicings no one actually plays: e.g. G5 as open G string + B
+    string 3rd fret, instead of the real, universally-taught shape (low E
+    string, 3rd fret + A string, 5th fret). Restricting to the low two
+    strings matches how power chords are actually played — rooted low,
+    palm-muted — and coincidentally means the fifth is always exactly 2
+    frets up in standard tuning, since both candidate string pairs there
+    are a perfect 4th apart (unlike, say, standard tuning's G-to-B gap, a
+    major 3rd instead — real guitar lore, no longer reachable now that the
+    G string is never a root candidate, but the interval math below still
+    computes it correctly from the tuning's actual gap rather than
+    hardcoding "+2", so it stays right for any tuning whose first two
+    string pairs aren't a plain perfect 4th, e.g. open tunings).
 
     Returns None if no string pair can fit within num_frets — shouldn't
     happen for any preset tuning, but stays honest rather than forcing a
@@ -220,7 +233,7 @@ def practical_power_chord_voicing(
     """
     open_pcs = tuning.open_string_pitch_classes
     best = None
-    for string_index in range(len(open_pcs) - 1):
+    for string_index in range(min(_POWER_CHORD_ROOT_STRINGS, len(open_pcs) - 1)):
         fret_root = (root_pitch_class - open_pcs[string_index]) % 12
         gap = (open_pcs[string_index + 1] - open_pcs[string_index]) % 12
         fret_fifth = fret_root + (7 - gap) % 12

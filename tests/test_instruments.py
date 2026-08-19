@@ -4,6 +4,7 @@ from chromalyze.instruments import (
     GUITAR_7_STRING_STANDARD,
     GUITAR_8_STRING_STANDARD,
     GUITAR_DROP_D,
+    GUITAR_OPEN_G,
     GUITAR_STANDARD,
     Tuning,
     fretboard_positions,
@@ -166,19 +167,18 @@ def test_build_power_chord_is_correctly_spelled_root_and_fifth():
 
 
 def test_practical_power_chord_voicing_matches_real_canonical_shapes():
-    # The exact shapes every guitarist already knows by heart — including
-    # the G-string special case: standard tuning's G-to-B gap is a major
-    # 3rd instead of the usual perfect 4th, so a power chord rooted on the
-    # G string needs +3 frets on the B string, not +2 like every other
-    # adjacent-string pair.
+    # The two movable shapes every guitarist already knows by heart —
+    # rooted on the low E string or the A string, never higher (a power
+    # chord voiced on, say, the G or B string, however low the fret, isn't
+    # how anyone actually plays one).
     expected = {
         "E": (0, 0, 1, 2),  # open E5: low E open, A string 2nd fret
-        "A": (1, 0, 2, 2),  # open A5: A open, D string 2nd fret
-        "D": (2, 0, 3, 2),  # open D5: D open, G string 2nd fret
-        "G": (3, 0, 4, 3),  # G5: G open, B string 3rd fret (the +3 case)
-        "B": (4, 0, 5, 2),  # B5: B open, high E string 2nd fret
-        "C": (4, 1, 5, 3),  # movable C5: B string 1st fret, high E 3rd fret
         "F": (0, 1, 1, 3),  # movable F5: low E 1st fret, A string 3rd fret
+        "G": (0, 3, 1, 5),  # movable G5: low E 3rd fret, A string 5th fret
+        "A": (1, 0, 2, 2),  # open A5: A open, D string 2nd fret
+        "B": (1, 2, 2, 4),  # movable B5: A string 2nd fret, D string 4th fret
+        "C": (1, 3, 2, 5),  # movable C5: A string 3rd fret, D string 5th fret
+        "D": (1, 5, 2, 7),  # movable D5: A string 5th fret, D string 7th fret
     }
     for root, (root_string, root_fret, fifth_string, fifth_fret) in expected.items():
         root_pc = NOTE_NAME_TO_PITCH_CLASS[root]
@@ -203,3 +203,30 @@ def test_practical_power_chord_voicing_only_ever_two_notes():
         assert strings[1] == strings[0] + 1
         root_position = next(p for p in positions if p.pitch_class == root_pc)
         assert root_position.string_index == strings[0]
+
+
+def test_practical_power_chord_voicing_never_roots_above_the_low_two_strings():
+    # The actual regression this guards: every root, for every pitch
+    # class, must land on the low E string or the A string — never a
+    # higher string, no matter how low a fret that might reach.
+    for root_pc in range(12):
+        positions = practical_power_chord_voicing(root_pc, GUITAR_STANDARD)
+        root_position = min(positions, key=lambda p: p.string_index)
+        assert root_position.string_index in (0, 1), root_pc
+
+
+def test_practical_power_chord_voicing_handles_a_non_standard_string_gap():
+    # Open G tuning's second string pair (G to D) is a perfect 5th, not
+    # the usual perfect 4th — the fret-offset-to-the-fifth math still
+    # needs to come from the tuning's real interval, not a hardcoded +2,
+    # even though the G-string-specific case standard tuning used to
+    # exercise is no longer reachable now the root search is restricted
+    # to the low two strings.
+    root_pc = NOTE_NAME_TO_PITCH_CLASS["A"]  # A5, rooted on open-G-tuning's 2nd string (G)
+    positions = practical_power_chord_voicing(root_pc, GUITAR_OPEN_G)
+    by_string = {p.string_index: p.fret for p in positions}
+    # String 1 (G, pitch class 7) to string 2 (D, pitch class 2) is a
+    # perfect 5th (7 semitones) above — exactly the same interval as
+    # root-to-fifth, so the fifth lands on the *same* fret as the root
+    # (2nd fret: G+2=A the root, D+2=E the fifth), not the usual +2 more.
+    assert by_string == {1: 2, 2: 2}
